@@ -29,6 +29,7 @@ RULE_PRESCRIPTION = "prescription"
 RULE_PERSON_EVALUATION = "person_evaluation"
 RULE_NUMERIC_SCORE = "numeric_score"
 RULE_NEGATIVE_ABSOLUTE = "negative_absolute"
+RULE_PROPORTION_HEDGE = "proportion_hedge"
 
 RULE_EXPLANATIONS = {
     RULE_PRESCRIPTION: (
@@ -45,6 +46,11 @@ RULE_EXPLANATIONS = {
     RULE_NEGATIVE_ABSOLUTE: (
         "Do not call anything bad, wrong or ugly. Reframe as a neutral "
         "observation of a tension, e.g. 'the two patterns compete for attention'."
+    ),
+    RULE_PROPORTION_HEDGE: (
+        "proportion_note must be an empty string when the framing does not "
+        "support a proportion read. Do not explain that it cannot be assessed "
+        "— just return an empty string for this field."
     ),
 }
 
@@ -124,6 +130,25 @@ _NEGATIVE_ABSOLUTE_PATTERNS = _compile(
         r"\b(?:fails?|failing)\s+to\b",
         r"\bmess\b",
         r"\bshouldn'?t\s+be\b",
+    ]
+)
+
+# A non-empty ``proportion_note`` that explains why proportion *can't* be read
+# is still an invented field per §7.4 — the contract wants an empty string,
+# not a sentence about the limitation. Checked only against proportion_note,
+# never the other fields, so it lives outside ``_RULES`` below.
+_PROPORTION_HEDGE_PATTERNS = _compile(
+    [
+        r"\bcan(?:not|'t)\s+be\s+(?:assessed|read|determined|evaluated)\b",
+        r"\bcannot\s+be\s+(?:assessed|read|determined|evaluated)\b",
+        r"\b(?:is|are|stays?|remains?)\s+(?:outside|out)\s+(?:of\s+)?(?:the\s+)?"
+        r"(?:frame|photo|image|shot)\b",
+        r"\bnot\s+(?:visible|shown|in\s+frame|in\s+view)\b",
+        r"\b(?:frame|framing|photo|image|crop)\s+(?:cuts?\s+off|crops?|does\s+"
+        r"not\s+support|doesn'?t\s+support)\b",
+        r"\bcannot\s+be\s+supported\b",
+        r"\b(?:can'?t|cannot)\s+tell\b",
+        r"\bhard\s+to\s+(?:assess|read|tell)\s+(?:here|from\s+this)\b",
     ]
 )
 
@@ -217,6 +242,20 @@ def lint_feedback(feedback: Dict[str, Any]) -> LintReport:
         value = feedback.get(name)
         if isinstance(value, str):
             violations.extend(lint_text(value, name))
+
+    proportion_note = feedback.get("proportion_note")
+    if isinstance(proportion_note, str) and proportion_note.strip():
+        for pattern in _PROPORTION_HEDGE_PATTERNS:
+            match = pattern.search(proportion_note)
+            if match:
+                violations.append(
+                    Violation(
+                        rule=RULE_PROPORTION_HEDGE,
+                        phrase=match.group(0),
+                        field="proportion_note",
+                    )
+                )
+                break  # one flag is enough to trigger a regenerate
 
     for index, note in enumerate(feedback.get("garment_notes") or []):
         if isinstance(note, dict):

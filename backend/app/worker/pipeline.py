@@ -171,14 +171,9 @@ def _run_stages(db: Session, outfit: Outfit, timings: Dict[str, float]) -> None:
     timings["vlm"] = round(time.monotonic() - mark, 3)
 
     detected = _normalise_garments(analysis)
-
-    if analysis is not None and not detected:
-        # §4.4: when detection *ran* and found nothing, that is a typed
-        # failure, not an empty success.
-        person_present = bool(analysis.get("person_present"))
-        raise _PipelineFailure(
-            "no_person" if not person_present else "no_garments_detected"
-        )
+    failure_reason = _detection_failure_reason(analysis, detected)
+    if failure_reason is not None:
+        raise _PipelineFailure(failure_reason)
     # When detection never ran (no VLM), we fall through with zero garments.
     # §7.6 requires the fallback to keep the product functional, and the
     # whole-image palette still supports a colour and contrast read.
@@ -265,6 +260,28 @@ def _normalise_garments(analysis: Optional[Dict[str, Any]]) -> List[Dict[str, An
             }
         )
     return cleaned
+
+
+def _detection_failure_reason(
+    analysis: Optional[Dict[str, Any]], detected: List[Dict[str, Any]]
+) -> Optional[str]:
+    """§4.4: None if the scan should proceed, else the §5.3 failure reason.
+
+    Checked in this order on purpose: a flat-lay or an empty room can still
+    yield detected garments (the VLM correctly names the clothing it sees),
+    but if no *person* is wearing them this is not an outfit read and must
+    fail as ``no_person`` rather than generate feedback for nobody's outfit —
+    exactly the case the photo brief's flat-lay/no-person set exists to catch.
+    Only once a person is confirmed present does an empty ``detected`` list
+    become ``no_garments_detected``.
+    """
+    if analysis is None:
+        return None
+    if not analysis.get("person_present"):
+        return "no_person"
+    if not detected:
+        return "no_garments_detected"
+    return None
 
 
 def _clamp_bbox(raw: Any) -> Dict[str, float]:

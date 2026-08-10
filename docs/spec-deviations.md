@@ -146,7 +146,41 @@ Nothing is stubbed — these are real implementations behind the same interface.
 
 ---
 
-## 10. Client
+## 10. Detection failure ordering, and a hedge treated as invented text
+
+Two related fixes made after running the 30-photo eval set for the first time
+(`backend/evals/`) surfaced both gaps — this is what "the eval harness will
+run the whole set and lay the reads out side by side" (photo brief) is for.
+
+**Flat-lay/no-person now fails even when garments are detected.** §4.4 says
+zero garments detected is a typed failure, and the original code only checked
+`person_present` to *choose* which failure reason applied once `detected` was
+already empty. A flat-lay photo breaks that assumption: the VLM correctly
+names the garments laid out on a surface, so `detected` is non-empty even
+though no one is wearing them, and the scan used to complete with generated
+feedback for an outfit that does not exist on a body. `_detection_failure_reason`
+(`app/worker/pipeline.py`) now checks `person_present` first, independent of
+`detected`, so a flat-lay fails cleanly as `no_person` — exactly what the
+brief's own flat-lay test case expects ("should fail cleanly with 'no person',
+not crash or invent an outfit").
+
+**A hedged proportion_note is lint-rejected, not just discouraged.** §7.4 asks
+for an empty `proportion_note` when the framing does not support a read,
+enforced only in the system prompt. In the eval run this was followed
+inconsistently — one cropped photo returned an empty string as instructed,
+another returned a sentence explaining that proportion "cannot be assessed"
+from the framing. That sentence is not empty, so it is exactly the invented
+field §7.4 rules out, just spelled as a caveat instead of a claim. `lint.py`
+now has a `RULE_PROPORTION_HEDGE` check, scoped to `proportion_note` only, that
+sends a draft like that back through the regenerate loop the same way a
+prescriptive or evaluative phrase would be. Worst case — retries exhausted —
+the scan falls through to the §7.6 fallback, which only ever writes a
+proportion note when geometry flags actually exist, so the hedge can never
+reach the user even on the unlucky path.
+
+---
+
+## 11. Client
 
 - **No react-navigation.** Four screens did not justify the native linking
   surface. Every screen takes plain callback props, so swapping a navigator in

@@ -38,7 +38,7 @@ uvicorn app.main:app --reload --port 8000
 Check it: <http://127.0.0.1:8000/health> · API docs at `/docs`.
 
 ```bash
-pytest          # 97 tests, no API key or network needed
+pytest          # 109 tests, no API key or network needed
 ```
 
 ### 2. Mobile

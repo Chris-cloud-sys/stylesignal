@@ -3,6 +3,7 @@ import pytest
 
 from app.worker.fallback import build_fallback_feedback
 from app.worker.lint import lint_feedback
+from app.worker.pipeline import _detection_failure_reason
 from app.worker.preprocess import UndecodableImage, preprocess
 from app.worker.rules import build_signals
 
@@ -56,6 +57,39 @@ def test_preprocess_applies_orientation_then_strips_exif():
     assert result.height > result.width
     # And nothing of the original EXIF survives into the working copy.
     assert not dict(Image.open(io.BytesIO(result.working_bytes)).getexif())
+
+
+# --- §4.4 detection failure reason ------------------------------------------
+def test_no_detection_run_is_not_a_failure():
+    """No VLM at all -- falls through to the §7.6 fallback, not a failure."""
+    assert _detection_failure_reason(None, []) is None
+
+
+def test_flat_lay_fails_as_no_person_even_with_garments_detected():
+    """The photo brief's own case: a flat-lay or empty room should fail
+
+    cleanly with 'no person', not invent feedback for an outfit nobody is
+    wearing -- even though the VLM correctly names the garments it sees.
+    """
+    analysis = {"person_present": False}
+    detected = [{"category": "top"}, {"category": "bottom"}]
+    assert _detection_failure_reason(analysis, detected) == "no_person"
+
+
+def test_no_person_and_no_garments_is_still_no_person():
+    analysis = {"person_present": False}
+    assert _detection_failure_reason(analysis, []) == "no_person"
+
+
+def test_person_present_with_no_garments_fails_as_no_garments_detected():
+    analysis = {"person_present": True}
+    assert _detection_failure_reason(analysis, []) == "no_garments_detected"
+
+
+def test_person_present_with_garments_is_not_a_failure():
+    analysis = {"person_present": True}
+    detected = [{"category": "top"}]
+    assert _detection_failure_reason(analysis, detected) is None
 
 
 # --- §4.7 rule signals -----------------------------------------------------

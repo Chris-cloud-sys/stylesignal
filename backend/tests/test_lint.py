@@ -12,6 +12,7 @@ from app.worker.lint import (
     RULE_NUMERIC_SCORE,
     RULE_PERSON_EVALUATION,
     RULE_PRESCRIPTION,
+    RULE_PROPORTION_HEDGE,
     lint_feedback,
     lint_text,
 )
@@ -145,6 +146,38 @@ def test_clean_feedback_passes():
     )
     assert report.ok
     assert report.as_dict()["violations"] == []
+
+
+# --- §7.4 forbidden: a hedge instead of an empty proportion_note -----------
+@pytest.mark.parametrize(
+    "text",
+    [
+        "The proportion cannot be assessed from this framing.",
+        "Footwear is outside the frame, so this cannot be determined.",
+        "The crop cuts off below the waist, so it is hard to tell here.",
+        "That detail is not visible in this photo.",
+        "The framing does not support a proportion read here.",
+    ],
+)
+def test_proportion_hedge_is_rejected(text):
+    report = lint_feedback({"proportion_note": text})
+    assert not report.ok, text
+    assert RULE_PROPORTION_HEDGE in report.rules_broken
+    assert {v.field for v in report.violations} == {"proportion_note"}
+
+
+def test_empty_proportion_note_is_not_a_hedge_violation():
+    for value in ("", None):
+        report = lint_feedback({"proportion_note": value})
+        assert report.ok, value
+
+
+def test_real_proportion_observation_passes():
+    """A genuine read must not get caught by the hedge patterns."""
+    report = lint_feedback(
+        {"proportion_note": "The cropped jacket raises the waistline visually."}
+    )
+    assert report.ok
 
 
 def test_correction_prompt_names_the_offending_phrase():

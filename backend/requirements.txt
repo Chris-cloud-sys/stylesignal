@@ -1,0 +1,36 @@
+# StyleSignal backend — v1
+# Python 3.9+ (3.11+ recommended). All pins are lower bounds; nothing here
+# needs a compiler on Windows.
+
+fastapi>=0.110
+uvicorn[standard]>=0.27
+pydantic>=2.6
+pydantic-settings>=2.2
+sqlalchemy>=2.0.25
+# SQLAlchemy pulls greenlet in on CPython/Windows. greenlet 3.2 dropped its
+# cp39 wheels and 3.9 has no compiler here, so pin to the last version that
+# ships one. Drop this line on Python 3.10+.
+greenlet<3.2; python_version < "3.10"
+python-multipart>=0.0.9
+PyJWT>=2.8
+email-validator>=2.1
+httpx>=0.26
+
+# Image preprocess + LAB colour extraction (§4.3, §4.5)
+Pillow>=10.2
+
+# VLM. Structured outputs (`output_config.format`) and vision both require a
+# recent SDK — leave this unpinned unless you have a reason not to.
+anthropic>=0.69
+
+# --- Optional, production only -------------------------------------------
+# Postgres instead of SQLite:
+#   psycopg[binary]>=3.1
+# S3-compatible object storage instead of local disk:
+#   boto3>=1.34
+# Redis-backed durable queue instead of the in-process worker:
+#   arq>=0.25
+
+# --- Dev -----------------------------------------------------------------
+pytest>=8.0
+pytest-asyncio>=0.23

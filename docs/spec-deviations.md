@@ -1,0 +1,156 @@
+# Spec deviations
+
+Every place this implementation departs from `stylesignal-spec.md`, and why.
+Nothing here is silent — if you disagree with a call, this is the list to
+argue with.
+
+---
+
+## 1. Schema additions
+
+§5 defines the columns; these are the ones added on top. All are additive, so
+the §9 promise that v2 needs no destructive migration still holds.
+
+| Table | Column | Why |
+|---|---|---|
+| `users` | `password_hash` | §8 requires JWT auth but §5.2 lists no credential column. Auth cannot work without it. |
+| `users` | `scans_period` | §5.2 says the scan counter is "reset by monthly cron". Storing the period the counter belongs to makes the reset lazy and idempotent, so a missed cron run cannot silently deny a user their quota. |
+| `users` | `rating_credits`, `earned_scans` | §1 puts "earn-more-by-rating" in the free tier. The credit ledger has to live somewhere. |
+| `outfits` | `image_sha256` | §8 requires caching by image hash. |
+| `outfits` | `deleted_at` | §6.4 requires soft-delete. |
+| `garments` | `created_at` | Deterministic ordering, so `garment_notes` indices resolve stably. |
+
+`outfits.working_key` and `outfits.thumb_key` are **not** stored — §5.7 defines
+the key layout as a pure function of `outfit_id`, so they are derived
+properties on the model.
+
+**`garments.formality` is `Float`, not `Numeric`.** §5.4 says numeric; `Numeric`
+round-trips as `Decimal`, which does not serialise to JSON without a custom
+encoder, and the value is a 0–1 estimate where float precision is irrelevant.
+
+---
+
+## 2. `POST /v1/outfits` can only be one flow
+
+§6.1 defines two upload flows and puts **both** on `POST /v1/outfits` — Flow A
+takes a multipart body, Flow B returns a presigned URL. They cannot share a
+route. §6.1 says "pick one for v1", so:
+
+- **Flow A** keeps `POST /v1/outfits` — it is the default and what the mobile
+  client uses.
+- **Flow B** lives at `POST /v1/outfits/presign`, then `POST
+  /v1/outfits/{id}/submit` as specified.
+
+Both are implemented, so switching the client to Flow B at scale is a client
+change only.
+
+---
+
+## 3. Create returns `202`, not `201`
+
+§6.6 explicitly permits this: "`202` acceptable alternative to `201` on create
+to signal async". Processing genuinely is async, so `202` is the more accurate
+code. `POST /v1/outfits/presign` still returns `201` — it creates a row without
+starting work.
+
+---
+
+## 4. A missing VLM completes the scan instead of failing it
+
+§4.4 says zero garments detected is a typed failure. §7.6 says that when the
+VLM is unavailable the templated fallback "keeps the product functional". In v1
+detection *is* the VLM call, so those two rules collide when the model is off.
+
+Resolution: the failure applies only when detection actually **ran** and found
+nothing. When the VLM never ran, the scan completes with zero garments and
+fallback prose built from the whole-image palette — which still supports a real
+colour and contrast read. Failing there would make `STYLESIGNAL_VLM_DISABLED`
+useless for UI work and would turn any model outage into a total outage, which
+is the opposite of what §7.6 asks for.
+
+---
+
+## 5. Rule signals are built in v1, not deferred
+
+§9 says "Rule-based color/formality signals optional in v1 — the VLM can
+approximate them. Add them if feedback feels arbitrary."
+
+They are built. §2.3 sells deterministic reads as a core differentiator against
+competitors' re-scan drift, and a VLM approximating its own colour impressions
+cannot deliver that — the same photo would drift between scans, which is
+precisely the failure mode §2.2 identifies. Extracting the palette from real
+pixels is cheap (no extra model call, no extra dependency beyond Pillow) and
+makes the guarantee real rather than aspirational.
+
+The pixel-measured palette is also fed *into* the prompt as ground truth, so
+the model describes measured colour rather than guessing at it.
+
+---
+
+## 6. Community endpoints ship built but disabled
+
+§6.5 says "schema in v1, endpoints active v2" and §9 lists the community feed
+under explicitly deferred. But §1 puts earn-by-rating in the **free tier**, and
+§2.3 calls the rating loop the data moat.
+
+Resolution: fully implemented, `STYLESIGNAL_COMMUNITY_ENABLED=false` by
+default. Flipping it on activates `GET /v1/feed`, `POST
+/v1/outfits/{id}/ratings`, and the earn loop. Disabled, they return `403
+feature_disabled` rather than 404, so a client developer gets a useful answer.
+
+Two decisions inside that loop worth flagging:
+
+- **Rating updates earn nothing.** §6.5 says "repeat = update". An update is
+  not new training signal, and paying for it would make the earn loop trivially
+  farmable by re-rating one outfit.
+- **Feed ordering is fewest-ratings-first.** §4.8 asks for active-learning
+  selection by model uncertainty, but the preference model does not exist until
+  v2. Fewest-ratings-first is its structural stand-in — it is where any model
+  would be least confident. Swap the ordering key when §9 step 5 lands; the
+  query is one line.
+
+---
+
+## 7. Pro's soft cap degrades quality, not access
+
+§1: "'Unlimited' must carry a soft fair-use ceiling with graceful degradation
+(not an advertised hard limit)". §1 does not say what degradation means, so:
+past `STYLESIGNAL_PRO_SOFT_MONTHLY_CAP`, a Pro scan still runs, at `effort:
+low` with the lint-retry budget cut to one. The user is never refused and never
+sees a limit; the marginal scan costs materially less.
+
+---
+
+## 8. Infrastructure substitutions
+
+Nothing is stubbed — these are real implementations behind the same interface.
+
+| Spec | Local default | Why |
+|---|---|---|
+| Postgres | SQLite | Same SQLAlchemy models. Docker is not installed on the dev machine; `STYLESIGNAL_DATABASE_URL` switches it. |
+| S3 | Local disk + HMAC-signed `/v1/media` route | Same `ObjectStorage` interface. The signed route is time-limited, so it is not an open file server. |
+| Redis + Arq | Bounded thread pool | Same `JobQueue` interface; uploads are still async from the client's view. Work dies with the process, so it is not a production queue. |
+| Alembic | `create_all` | §9 requires every v2 table to exist in v1, so the first real migration is additive columns only. Introduce Alembic before the first production deploy. |
+
+---
+
+## 9. Security choices
+
+- **PBKDF2-HMAC-SHA256, not bcrypt/argon2.** Standard library, no compiler
+  needed on any platform. Legitimate at 390k rounds. `app/security.py` is the
+  only file that changes when you move to argon2id — do that before real users.
+- **Rate limiting is in-process.** Correct for one gateway process; it
+  under-counts across multiple workers. `STYLESIGNAL_REDIS_URL` is already
+  configured — move the counter there before scaling out.
+- **Another user's outfit returns 404, not 403.** A 403 confirms the id exists.
+
+---
+
+## 10. Client
+
+- **No react-navigation.** Four screens did not justify the native linking
+  surface. Every screen takes plain callback props, so swapping a navigator in
+  touches `App.tsx` only.
+- **Polling, not websockets.** §4.1 and §10 both specify poll for v1, at the
+  §6.6 cadence (1.5s → 4s). `useOutfitPolling` is the seam where a socket or
+  push channel replaces it without touching any screen.

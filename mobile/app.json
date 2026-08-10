@@ -1,0 +1,40 @@
+{
+  "expo": {
+    "name": "StyleSignal",
+    "slug": "stylesignal",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "scheme": "stylesignal",
+    "splash": {
+      "resizeMode": "contain",
+      "backgroundColor": "#F4F0E9"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.latencyx.stylesignal",
+      "infoPlist": {
+        "NSCameraUsageDescription": "StyleSignal uses your camera to photograph the outfit you want described.",
+        "NSPhotoLibraryUsageDescription": "StyleSignal reads photos you pick so it can describe the outfit in them."
+      }
+    },
+    "android": {
+      "package": "com.latencyx.stylesignal",
+      "adaptiveIcon": {
+        "backgroundColor": "#F4F0E9"
+      }
+    },
+    "plugins": [
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "StyleSignal reads photos you pick so it can describe the outfit in them.",
+          "cameraPermission": "StyleSignal uses your camera to photograph the outfit you want described."
+        }
+      ]
+    ],
+    "extra": {
+      "apiBaseUrl": "http://127.0.0.1:8000"
+    }
+  }
+}

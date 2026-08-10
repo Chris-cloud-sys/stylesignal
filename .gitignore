@@ -1,0 +1,26 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+
+# Runtime state — SQLite database, stored objects, logs
+backend/var/
+backend/.env
+backend/boot.log
+backend/boot.err
+
+# Node / Expo
+node_modules/
+.expo/
+dist/
+web-build/
+*.tsbuildinfo
+
+# Editors / OS
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/

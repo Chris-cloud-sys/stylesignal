@@ -90,7 +90,27 @@ CPU — the pipeline is I/O-bound on the VLM call.
 
 ---
 
-## 4. Configuration checklist
+## 4. Rate limiting on Redis
+
+```bash
+pip install redis
+```
+
+```bash
+STYLESIGNAL_RATELIMIT_BACKEND=redis
+STYLESIGNAL_REDIS_URL=redis://redis-host:6379/0
+```
+
+Reuses the same Redis instance as Arq above if you have one; no separate
+service needed. The inprocess default under-counts once you run more than one
+gateway worker, because each process only sees its own share of requests —
+this is what fixes that. If Redis is unreachable the limiter fails *open*
+(logs a warning, lets the request through) rather than taking the gateway down
+over it; `app/quota.py`'s scan quota is what actually protects VLM spend.
+
+---
+
+## 5. Configuration checklist
 
 | Variable | Must change |
 |---|---|
@@ -100,6 +120,7 @@ CPU — the pipeline is I/O-bound on the VLM call.
 | `STYLESIGNAL_DATABASE_URL` | Postgres |
 | `STYLESIGNAL_STORAGE_BACKEND` | `s3` |
 | `STYLESIGNAL_QUEUE_BACKEND` | `arq` |
+| `STYLESIGNAL_RATELIMIT_BACKEND` | `redis` once you run more than one gateway worker |
 | `STYLESIGNAL_FREE_MONTHLY_SCANS` | 5 per §1 (the test config uses 3) |
 | `STYLESIGNAL_PRO_SOFT_MONTHLY_CAP` | Set from measured COGS, not a guess |
 
@@ -109,14 +130,12 @@ time; just expect clients to re-authenticate.
 
 ---
 
-## 5. Before real users
+## 6. Before real users
 
 These are the §8 items that are wired but not production-grade:
 
-- **Password hashing** — PBKDF2 today. Move to argon2id; `app/security.py` is
-  the only file that changes.
-- **Rate limiting** — in-process, so it under-counts across workers. Move the
-  counter to Redis.
+- **Rate limiting** — defaults to in-process, so it under-counts across
+  workers until you set `STYLESIGNAL_RATELIMIT_BACKEND=redis` (§4 above).
 - **Account deletion** — §8 requires hard-delete on account deletion. Outfit
   soft-delete and object cleanup exist (§6.4); the account-level cascade does
   not. Add `DELETE /v1/auth/me` that purges rows and calls
@@ -128,7 +147,7 @@ These are the §8 items that are wired but not production-grade:
 
 ---
 
-## 6. Observability (§8)
+## 7. Observability (§8)
 
 Logs are JSON lines on stdout outside dev (`app/logging_conf.py`). The fields
 §8 asks for are already emitted:

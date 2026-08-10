@@ -43,6 +43,11 @@ class Settings(BaseSettings):
     redis_url: str = "redis://localhost:6379/0"
     inprocess_concurrency: int = 2
 
+    # --- Rate limiting (§8) ------------------------------------------------
+    # inprocess under-counts across more than one gateway worker; point it at
+    # redis (same STYLESIGNAL_REDIS_URL above) before running more than one.
+    ratelimit_backend: str = "inprocess"  # inprocess | redis
+
     # --- VLM (§7.5) ------------------------------------------------------
     anthropic_api_key: Optional[str] = None
     vlm_model: str = "claude-opus-5"

@@ -136,12 +136,28 @@ Nothing is stubbed — these are real implementations behind the same interface.
 
 ## 9. Security choices
 
-- **PBKDF2-HMAC-SHA256, not bcrypt/argon2.** Standard library, no compiler
-  needed on any platform. Legitimate at 390k rounds. `app/security.py` is the
-  only file that changes when you move to argon2id — do that before real users.
-- **Rate limiting is in-process.** Correct for one gateway process; it
-  under-counts across multiple workers. `STYLESIGNAL_REDIS_URL` is already
-  configured — move the counter there before scaling out.
+- **Argon2id, not PBKDF2.** `app/security.py` originally used PBKDF2-HMAC-SHA256
+  from the standard library on the assumption that bcrypt/argon2 need a
+  compiler this dev machine doesn't have. That assumption turned out to be
+  wrong — `argon2-cffi` ships a prebuilt wheel for cp39-abi3-win_amd64 (and
+  every other common platform), so there was no reason to stay on PBKDF2 once
+  checked. Swapped before this had any real users; `app/security.py` was the
+  only file that changed, exactly as originally planned.
+- **Rate limiting is inprocess by default, redis available.** `app/ratelimit/`
+  is now a `storage`/`jobs`-shaped interface with two backends:
+  `inprocess` (a fixed-window dict, correct for one gateway process and for
+  tests, but under-counts across multiple workers because each process only
+  sees its own share of requests) and `redis` (the same fixed window shared
+  across every worker via one Redis key). `STYLESIGNAL_RATELIMIT_BACKEND=redis`
+  switches it, reusing `STYLESIGNAL_REDIS_URL`. Still defaults to `inprocess`
+  for the same reason storage defaults to `local` and the queue defaults to
+  `inprocess` — nothing here needs Redis installed to run. The redis backend
+  fails *open* (logs and allows the request) if Redis is unreachable, on the
+  view that a rate limiter should never become a bigger outage than what it
+  protects against; `app/quota.py`'s scan quota is the limiter that actually
+  guards VLM spend; and it has no local test, matching this repo's existing
+  precedent for other infra-dependent production backends (`ArqQueue`,
+  `S3Storage`) — see `docs/deployment.md` before relying on it.
 - **Another user's outfit returns 404, not 403.** A 403 confirms the id exists.
 
 ---

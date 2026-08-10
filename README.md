@@ -38,7 +38,7 @@ uvicorn app.main:app --reload --port 8000
 Check it: <http://127.0.0.1:8000/health> · API docs at `/docs`.
 
 ```bash
-pytest          # 109 tests, no API key or network needed
+pytest          # 119 tests, no API key or network needed
 ```
 
 ### 2. Mobile
@@ -147,6 +147,7 @@ implementations, just not distributed ones.
 | Database | SQLite file | Postgres |
 | Object storage | Local disk + signed `/v1/media` route | S3 with SSE (§8) |
 | Job queue | Bounded thread pool, in-process | Arq on Redis (§4.2, §10) |
+| Rate limiting | In-process fixed window | Same window, shared via Redis (§8) |
 | Vector DB | — | pgvector (v2, §10) |
 
 Flip each with one env var; see `.env.example`.
@@ -214,9 +215,8 @@ every scan then returns templated §7.6 text.
   `requirements.txt` pins `greenlet<3.2` for that reason only — greenlet 3.2
   dropped its 3.9 wheels and there is no compiler on this machine. On 3.10+ you
   can delete that line. 3.11+ is a better long-term target.
-- Passwords use PBKDF2-HMAC-SHA256 from the standard library so the project
-  installs with no compiler on any platform. Move to argon2id before real
-  users; `app/security.py` is the only file that changes.
+- Passwords are hashed with argon2id (`argon2-cffi`), which ships a prebuilt
+  wheel for this platform — no compiler needed here either.
 - The mobile client uses a small hand-rolled screen switcher rather than
   react-navigation. Four screens did not justify the native linking surface,
   and every screen takes plain callback props — swapping in a navigator is a

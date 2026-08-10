@@ -2,14 +2,14 @@
 
 JWT bearer with a short-lived access token and a long-lived refresh token.
 
-Password hashing uses PBKDF2-HMAC-SHA256 from the standard library rather than
-bcrypt/argon2 so the project installs with no compiler on any platform. It is a
-legitimate KDF at this iteration count; swap in argon2id before you have real
-users — the interface below is the only thing that changes.
+Password hashing uses argon2id via ``argon2-cffi``. An earlier version used
+PBKDF2-HMAC-SHA256 from the standard library because bcrypt/argon2 usually
+need a compiler this dev machine doesn't have — but argon2-cffi ships a
+prebuilt wheel for this platform (cp39-abi3-win_amd64), so that tradeoff
+turned out not to apply here. See spec-deviations.md §10.
 """
 import hashlib
 import hmac
-import os
 import secrets
 import time
 import uuid
@@ -17,39 +17,31 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, Optional, Tuple
 
 import jwt
+from argon2 import PasswordHasher
+from argon2.exceptions import InvalidHashError, VerifyMismatchError
 
 from .config import get_settings
 from .errors import unauthorized
 
 settings = get_settings()
 
-_PBKDF2_ROUNDS = 390_000
-_PBKDF2_PREFIX = "pbkdf2_sha256"
+# Defaults (19 MiB memory, 2 iterations, 1 lane) follow OWASP's argon2id
+# baseline for an interactive login path — deliberately not tuned up, since
+# this runs synchronously in the request path and a heavier cost multiplies
+# straight into login latency.
+_hasher = PasswordHasher()
 
 
 # --- Passwords -------------------------------------------------------------
 def hash_password(password: str) -> str:
-    salt = os.urandom(16)
-    digest = hashlib.pbkdf2_hmac(
-        "sha256", password.encode("utf-8"), salt, _PBKDF2_ROUNDS
-    )
-    return "{0}${1}${2}${3}".format(
-        _PBKDF2_PREFIX, _PBKDF2_ROUNDS, salt.hex(), digest.hex()
-    )
+    return _hasher.hash(password)
 
 
 def verify_password(password: str, stored: str) -> bool:
     try:
-        algorithm, rounds, salt_hex, digest_hex = stored.split("$")
-        if algorithm != _PBKDF2_PREFIX:
-            return False
-        expected = bytes.fromhex(digest_hex)
-        actual = hashlib.pbkdf2_hmac(
-            "sha256", password.encode("utf-8"), bytes.fromhex(salt_hex), int(rounds)
-        )
-    except (ValueError, TypeError):
+        return _hasher.verify(stored, password)
+    except (VerifyMismatchError, InvalidHashError):
         return False
-    return hmac.compare_digest(expected, actual)
 
 
 # --- Tokens ----------------------------------------------------------------

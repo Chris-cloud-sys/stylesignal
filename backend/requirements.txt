@@ -16,6 +16,10 @@ PyJWT>=2.8
 email-validator>=2.1
 httpx>=0.26
 
+# Password hashing (§8). Ships a prebuilt wheel for cp39+/win_amd64 and the
+# other common platforms, so — unlike bcrypt — it needs no compiler here.
+argon2-cffi>=23.1
+
 # Image preprocess + LAB colour extraction (§4.3, §4.5)
 Pillow>=10.2
 
@@ -30,6 +34,11 @@ anthropic>=0.69
 #   boto3>=1.34
 # Redis-backed durable queue instead of the in-process worker:
 #   arq>=0.25
+# Redis-backed rate limiting instead of the in-process counter
+# (STYLESIGNAL_RATELIMIT_BACKEND=redis). Already pulled in transitively if
+# arq is installed above; listed explicitly since you may want one without
+# the other.
+#   redis>=5.0
 
 # --- Dev -----------------------------------------------------------------
 pytest>=8.0

@@ -120,11 +120,33 @@ def test_upload_poll_and_read_feedback(auth_client):
     assert result["thumb_url"]
     assert "garments" in result
     feedback = result["feedback"]
+
+    # §7.7 glanceable fields — always visible, top-level.
+    assert feedback["verdict_phrase"].strip()
+    assert feedback["verdict_subtitle"].strip()
+    assert feedback["palette"], "whole-image palette runs regardless of detection"
+    assert 2 <= len(feedback["quick_reads"]) <= 4
+    for quick_read in feedback["quick_reads"]:
+        assert quick_read["dimension"]
+        assert quick_read["text"].strip()
+    # The VLM is disabled in tests (conftest.py), so detection never runs and
+    # no garments are ever found — meaning formality has no mean, so both
+    # meters are correctly absent rather than a fabricated "strong"/"off".
+    # test_rules.py covers the populated case directly. The endpoint uses
+    # response_model_exclude_none=True, so a None field is omitted from the
+    # JSON entirely rather than sent as null — hence .get(), not [...].
+    assert feedback.get("occasion_match") is None
+    assert feedback.get("signal_clarity") is None
+    assert feedback.get("focal_point") is None
+
+    # §7.7 long-form fields, now nested under full_read.
+    full_read = feedback["full_read"]
     for field in ("overall_read", "color_note", "formality_note"):
-        assert feedback[field].strip()
+        assert full_read[field].strip()
 
     # §7.3: nothing user-visible carries a score.
-    assert not any(ch.isdigit() for ch in feedback["overall_read"])
+    assert not any(ch.isdigit() for ch in full_read["overall_read"])
+    assert not any(ch.isdigit() for ch in feedback["verdict_phrase"])
 
 
 def test_pending_response_is_minimal(auth_client):
@@ -270,7 +292,10 @@ def test_image_hash_cache_reuses_a_prior_scan(auth_client):
 
     assert result["status"] == "complete"
     first_body = auth_client.get("/v1/outfits/{0}".format(first["outfit_id"])).json()
-    assert result["feedback"]["overall_read"] == first_body["feedback"]["overall_read"]
+    assert (
+        result["feedback"]["full_read"]["overall_read"]
+        == first_body["feedback"]["full_read"]["overall_read"]
+    )
 
 
 # --- §6.5 community loop ---------------------------------------------------

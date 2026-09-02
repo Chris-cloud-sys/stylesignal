@@ -18,6 +18,15 @@ One call per scan (§9 v1), carrying:
 and returning the §5.5 fields under a JSON schema, so the *shape* is guaranteed
 by the API and only the *voice* needs enforcing.
 
+Two families of output live in that schema: the long-form fields
+(`overall_read`, `color_note`, `formality_note`, `proportion_note`,
+`garment_notes`) and the §7.7 glanceable fields (`verdict_phrase`,
+`verdict_subtitle`, `focal_point`, `quick_reads`). `occasion_match` and
+`signal_clarity` — the two meters on the result screen — are **not** in this
+schema; they're computed deterministically in `app/worker/rules.py` from the
+same signals the fallback uses, never asked of the model. See
+spec-deviations.md §11 for why.
+
 The system prompt is a stable cached prefix. Anything per-request goes in the
 user turn — putting a timestamp, a user id, or the occasion into the system
 prompt would invalidate the cache on every scan and multiply the cost of the
@@ -35,6 +44,13 @@ categories are enforced twice — once in the prompt, once in
 output and you will simply pay for regenerations. If you want to permit
 something currently forbidden, change the lint rules *and* the tests first;
 `tests/test_lint.py` is the specification.
+
+**The §7.7 copy limits work the same way.** `verdict_phrase` (≤5 words),
+`verdict_subtitle` (≤8), `focal_point` (≤12), and each `quick_reads` item
+(≤15 words, one sentence) are stated in the prompt but enforced by
+`RULE_WORD_LIMIT`/`RULE_MULTI_SENTENCE` in `lint.py`, on the same
+regenerate-or-fall-back loop as the four voice prohibitions. A model that
+drifts long on `verdict_phrase` costs a regeneration, not a broken UI.
 
 **"Every observation must carry its own lever" is the mitigation for §2.5.**
 The spec's own risk register says pure description reads as evasive if a user
@@ -103,6 +119,12 @@ where it matters:
   passes.
 - `clash` is *not* a violation on its own — it is a §4.7 harmony class. Only
   "clashes badly" and friends are.
+- `RULE_WORD_LIMIT` counts words with a plain `str.split()` — "low-contrast"
+  is one word, not two, so hyphenated compounds don't cost the model extra
+  budget.
+- `RULE_MULTI_SENTENCE` only fires on an interior `.`/`!`/`?` after stripping
+  one trailing terminator — "Reads controlled, not effortful." passes;
+  "The jacket is long. It lengthens the line." does not.
 
 If you add a rule, add both a rejecting case and a nearby passing case to
 `tests/test_lint.py`. The passing cases in that file are lifted from §7.2, so

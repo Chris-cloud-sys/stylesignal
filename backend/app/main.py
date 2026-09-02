@@ -16,7 +16,7 @@ from .errors import install_error_handlers
 from .jobs import get_queue, reset_queue
 from .logging_conf import configure_logging
 from .models import ModelVersion
-from .routers import auth, feed, media, outfits
+from .routers import auth, billing, feed, media, outfits
 from .schemas import HealthResponse
 
 settings = get_settings()
@@ -75,6 +75,7 @@ def create_app() -> FastAPI:
     app.include_router(auth.router)
     app.include_router(outfits.router)
     app.include_router(feed.router)
+    app.include_router(billing.router)
     if settings.storage_backend == "local":
         app.include_router(media.router)
 

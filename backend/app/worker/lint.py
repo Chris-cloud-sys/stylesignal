@@ -23,6 +23,11 @@ LINTED_FIELDS = (
     "color_note",
     "formality_note",
     "proportion_note",
+    # §7.7 glanceable fields — same voice rules apply to the five-second
+    # read as to the long-form one.
+    "verdict_phrase",
+    "verdict_subtitle",
+    "focal_point",
 )
 
 RULE_PRESCRIPTION = "prescription"
@@ -30,6 +35,17 @@ RULE_PERSON_EVALUATION = "person_evaluation"
 RULE_NUMERIC_SCORE = "numeric_score"
 RULE_NEGATIVE_ABSOLUTE = "negative_absolute"
 RULE_PROPORTION_HEDGE = "proportion_hedge"
+RULE_WORD_LIMIT = "word_limit"
+RULE_MULTI_SENTENCE = "multi_sentence"
+
+# §7.7 copy limits. quick_reads text is checked separately (its limit is
+# per-item, not per-field) — see the ``quick_reads`` loop in lint_feedback.
+WORD_LIMITS = {
+    "verdict_phrase": 5,
+    "verdict_subtitle": 8,
+    "focal_point": 12,
+}
+QUICK_READ_WORD_LIMIT = 15
 
 RULE_EXPLANATIONS = {
     RULE_PRESCRIPTION: (
@@ -51,6 +67,16 @@ RULE_EXPLANATIONS = {
         "proportion_note must be an empty string when the framing does not "
         "support a proportion read. Do not explain that it cannot be assessed "
         "— just return an empty string for this field."
+    ),
+    RULE_WORD_LIMIT: (
+        "This field has a hard word-count limit for the glanceable result "
+        "screen (§7.7). Cut it down to fit — say less, not the same thing "
+        "in fewer words with ellipses or abbreviations."
+    ),
+    RULE_MULTI_SENTENCE: (
+        "This field must be exactly one sentence. Pick the single strongest "
+        "observation and drop the rest, rather than joining two observations "
+        "with a comma or semicolon."
     ),
 }
 
@@ -221,6 +247,34 @@ class LintReport:
         return "\n".join(lines)
 
 
+def _check_word_limit(text: str, field_name: str, limit: int) -> List[Violation]:
+    word_count = len(text.split())
+    if word_count <= limit:
+        return []
+    return [
+        Violation(
+            rule=RULE_WORD_LIMIT,
+            phrase="{0} words (limit {1})".format(word_count, limit),
+            field=field_name,
+        )
+    ]
+
+
+def _check_single_sentence(text: str, field_name: str) -> List[Violation]:
+    # One trailing terminator is fine ("Reads controlled, not effortful.");
+    # anything left after stripping it means a second sentence is present.
+    stripped = text.strip().rstrip(".!?")
+    if re.search(r"[.!?]", stripped):
+        return [
+            Violation(
+                rule=RULE_MULTI_SENTENCE,
+                phrase=text,
+                field=field_name,
+            )
+        ]
+    return []
+
+
 def lint_text(text: str, field_name: str = "text") -> List[Violation]:
     if not text:
         return []
@@ -242,6 +296,20 @@ def lint_feedback(feedback: Dict[str, Any]) -> LintReport:
         value = feedback.get(name)
         if isinstance(value, str):
             violations.extend(lint_text(value, name))
+            limit = WORD_LIMITS.get(name)
+            if limit is not None and value.strip():
+                violations.extend(_check_word_limit(value, name, limit))
+
+    for index, quick_read in enumerate(feedback.get("quick_reads") or []):
+        if not isinstance(quick_read, dict):
+            continue
+        text = quick_read.get("text")
+        if not isinstance(text, str) or not text.strip():
+            continue
+        field_name = "quick_reads[{0}]".format(index)
+        violations.extend(lint_text(text, field_name))
+        violations.extend(_check_word_limit(text, field_name, QUICK_READ_WORD_LIMIT))
+        violations.extend(_check_single_sentence(text, field_name))
 
     proportion_note = feedback.get("proportion_note")
     if isinstance(proportion_note, str) and proportion_note.strip():

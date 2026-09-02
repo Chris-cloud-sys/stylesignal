@@ -23,13 +23,16 @@ from ..quota import consume_scan, refund_scan
 from ..schemas import (
     ColourOut,
     FeedbackOut,
+    FullReadOut,
     GarmentNoteOut,
     GarmentOut,
+    MeterOut,
     OutfitCreateResponse,
     OutfitDetail,
     OutfitListItem,
     OutfitListResponse,
     PresignedUploadResponse,
+    QuickReadOut,
     valid_occasion,
 )
 from ..storage import get_storage
@@ -309,19 +312,52 @@ def build_outfit_detail(outfit: Outfit) -> OutfitDetail:
     ]
 
     if outfit.feedback is not None:
+        feedback = outfit.feedback
+        palette = (feedback.signals or {}).get("colour", {}).get("palette") or []
         detail.feedback = FeedbackOut(
-            overall_read=outfit.feedback.overall_read,
-            color_note=outfit.feedback.color_note,
-            formality_note=outfit.feedback.formality_note,
-            proportion_note=outfit.feedback.proportion_note,
-            garment_notes=[
-                GarmentNoteOut(
-                    garment_id=_maybe_uuid(note.get("garment_id")),
-                    note=str(note.get("note") or ""),
+            verdict_phrase=feedback.verdict_phrase,
+            verdict_subtitle=feedback.verdict_subtitle,
+            occasion_match=(
+                MeterOut(**feedback.occasion_match)
+                if feedback.occasion_match
+                else None
+            ),
+            signal_clarity=(
+                MeterOut(**feedback.signal_clarity)
+                if feedback.signal_clarity
+                else None
+            ),
+            palette=[
+                ColourOut(
+                    hex=str(colour.get("hex")),
+                    weight=float(colour.get("weight", 0.0) or 0.0),
                 )
-                for note in (outfit.feedback.garment_notes or [])
-                if note.get("note")
+                for colour in palette
+                if colour.get("hex")
             ],
+            focal_point=feedback.focal_point,
+            quick_reads=[
+                QuickReadOut(
+                    dimension=str(item.get("dimension") or ""),
+                    text=str(item.get("text") or ""),
+                )
+                for item in (feedback.quick_reads or [])
+                if item.get("text")
+            ],
+            full_read=FullReadOut(
+                overall_read=feedback.overall_read,
+                color_note=feedback.color_note,
+                formality_note=feedback.formality_note,
+                proportion_note=feedback.proportion_note,
+                garment_notes=[
+                    GarmentNoteOut(
+                        garment_id=_maybe_uuid(note.get("garment_id")),
+                        note=str(note.get("note") or ""),
+                    )
+                    for note in (feedback.garment_notes or [])
+                    if note.get("note")
+                ],
+            ),
         )
     return detail
 

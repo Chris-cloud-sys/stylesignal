@@ -115,6 +115,17 @@ class User(Base):
     rating_credits: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     earned_scans: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
 
+    # SPEC+ — native IAP (docs/spec-deviations.md #18). `plan == "pro"` alone
+    # isn't enough once a subscription can lapse — `pro_expires_at` is the
+    # real source of truth; quota.effective_plan() is what reads it. NULL
+    # means "no expiry" (an admin/test override, not a real subscription).
+    pro_expires_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    iap_platform: Mapped[Optional[str]] = mapped_column(String(16), nullable=True)
+    iap_product_id: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    iap_transaction_id: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
+
     tenant: Mapped[Optional[Tenant]] = relationship(back_populates="users")
     outfits: Mapped[List["Outfit"]] = relationship(
         back_populates="user", cascade="all, delete-orphan"
@@ -233,6 +244,26 @@ class OutfitFeedback(Base):
     garment_notes: Mapped[List[Dict[str, Any]]] = mapped_column(
         JSONB, nullable=False, default=list
     )
+
+    # SPEC+ — §7.7 glanceable result screen (v2 redesign). The long-form
+    # fields above are unchanged; these are the always-visible headline.
+    # verdict_phrase/verdict_subtitle/focal_point/quick_reads are VLM-authored
+    # (or §7.6-fallback-authored); occasion_match/signal_clarity are computed
+    # deterministically in app/worker/rules.py, never asked of the VLM — see
+    # spec-deviations.md for why.
+    verdict_phrase: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    verdict_subtitle: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    focal_point: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    quick_reads: Mapped[List[Dict[str, Any]]] = mapped_column(
+        JSONB, nullable=False, default=list
+    )
+    occasion_match: Mapped[Optional[Dict[str, Any]]] = mapped_column(
+        JSONB, nullable=True
+    )
+    signal_clarity: Mapped[Optional[Dict[str, Any]]] = mapped_column(
+        JSONB, nullable=True
+    )
+
     # Internal rule/model signals. Never surfaced raw (§7.3 forbids numeric
     # scores in user-facing output).
     signals: Mapped[Dict[str, Any]] = mapped_column(
@@ -244,6 +275,32 @@ class OutfitFeedback(Base):
     )
 
     outfit: Mapped[Outfit] = relationship(back_populates="feedback")
+
+
+class PasswordResetCode(Base):
+    """SPEC+ — §8 requires auth but the spec text has no reset flow. A
+    short-lived, single-use, attempt-limited 6-digit code, not a long opaque
+    token — see docs/spec-deviations.md."""
+
+    __tablename__ = "password_reset_codes"
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=_uuid)
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    code_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+    # Wrong guesses against this one code — capped independently of the
+    # per-email rate limit, since 6 digits is only 1e6 possibilities.
+    attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    used_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=_utcnow
+    )
 
 
 class Rating(Base):

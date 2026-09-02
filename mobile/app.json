@@ -34,7 +34,11 @@
       ]
     ],
     "extra": {
-      "apiBaseUrl": "http://127.0.0.1:8000"
-    }
+      "apiBaseUrl": "http://10.0.0.64:8000",
+      "eas": {
+        "projectId": "a368b71a-1db8-4841-a370-b85c44553426"
+      }
+    },
+    "owner": "armygymnastic"
   }
 }

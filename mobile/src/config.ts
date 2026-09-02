@@ -46,3 +46,13 @@ export const OCCASIONS = [
 export type Occasion = (typeof OCCASIONS)[number];
 
 export const CONTEXT_NOTE_MAX_LENGTH = 280;
+
+/**
+ * Native IAP (SPEC+, docs/spec-deviations.md #18) — same product id on both
+ * stores, matching the backend's `iap_product_id_ios`/`iap_product_id_android`
+ * defaults in app/config.py. Must be created in App Store Connect and Play
+ * Console with exactly this id before a real purchase can complete.
+ */
+export const PRO_SUBSCRIPTION_SKU = 'stylesignal_pro_monthly';
+/** Shown only until the store returns a real, localized price. */
+export const PRO_MONTHLY_PRICE_FALLBACK = '$4.99/month';

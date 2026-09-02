@@ -35,10 +35,10 @@ from ..models import (
 )
 from ..quota import is_degraded
 from ..storage import get_storage
-from .colour import dominant_colours
+from .colour import dominant_colours, garment_palette
 from .fallback import build_fallback_feedback
 from .preprocess import UndecodableImage, preprocess
-from .rules import build_signals
+from .rules import build_signals, compute_meters
 from .vlm import VLMUnavailable, analyse_outfit
 
 logger = logging.getLogger("stylesignal.worker.pipeline")
@@ -186,16 +186,35 @@ def _run_stages(db: Session, outfit: Outfit, timings: Dict[str, float]) -> None:
     garment_dicts = [_garment_as_dict(row) for row in garment_rows]
 
     # --- Deterministic rule signals (§4.7) --------------------------------
-    signals = build_signals(garment_dicts, outfit_palette, outfit.occasion)
+    # §7.8: the displayed palette is garment colours only, not the whole
+    # frame (walls/floor are meaningless to the user) — but with zero
+    # garments there is nothing garment-level to show, so the whole-image
+    # sample is what keeps the §7.6 fallback's colour read alive at all.
+    display_palette = (
+        garment_palette(garment_dicts, max_colours=5)
+        if garment_dicts
+        else outfit_palette
+    )
+    signals = build_signals(garment_dicts, display_palette, outfit.occasion)
     signals["vlm"] = vlm_meta
     signals["engine"] = settings.feedback_engine_version
+
+    # --- §7.7 glanceable meters --------------------------------------------
+    # Computed once here and persisted, not recomputed per read — see
+    # rules.py's module docstring for why.
+    meters = compute_meters(signals, outfit.occasion)
+    signals["meters"] = meters
 
     # --- Feedback prose (§7) ----------------------------------------------
     if analysis is not None:
         prose = _prose_from_analysis(analysis, garment_rows)
     else:
-        prose = build_fallback_feedback(signals, garment_dicts, outfit.occasion)
+        prose = build_fallback_feedback(
+            signals, garment_dicts, outfit.occasion, meters.get("occasion_match")
+        )
         signals["fallback_used"] = True
+
+    _enforce_verdict_meter_agreement(prose, meters)
 
     db.add(
         OutfitFeedback(
@@ -205,6 +224,12 @@ def _run_stages(db: Session, outfit: Outfit, timings: Dict[str, float]) -> None:
             formality_note=prose["formality_note"],
             proportion_note=prose.get("proportion_note") or None,
             garment_notes=prose.get("garment_notes") or [],
+            verdict_phrase=prose["verdict_phrase"],
+            verdict_subtitle=prose["verdict_subtitle"],
+            focal_point=prose.get("focal_point") or None,
+            quick_reads=prose.get("quick_reads") or [],
+            occasion_match=meters.get("occasion_match"),
+            signal_clarity=meters.get("signal_clarity"),
             signals=signals,
             model_version=settings.feedback_engine_version,
         )
@@ -371,13 +396,46 @@ def _prose_from_analysis(
             )
 
     proportion = (analysis.get("proportion_note") or "").strip()
+
+    quick_reads: List[Dict[str, str]] = []
+    for item in analysis.get("quick_reads") or []:
+        if not isinstance(item, dict):
+            continue
+        text = str(item.get("text") or "").strip()
+        dimension = str(item.get("dimension") or "").strip()
+        if text and dimension:
+            quick_reads.append({"dimension": dimension, "text": text})
+    quick_reads = quick_reads[:4]
+
+    focal_point = str(analysis.get("focal_point") or "").strip()
+
     return {
         "overall_read": str(analysis.get("overall_read") or "").strip(),
         "color_note": str(analysis.get("color_note") or "").strip(),
         "formality_note": str(analysis.get("formality_note") or "").strip(),
         "proportion_note": proportion or None,
         "garment_notes": notes,
+        "verdict_phrase": str(analysis.get("verdict_phrase") or "").strip(),
+        "verdict_subtitle": str(analysis.get("verdict_subtitle") or "").strip(),
+        "focal_point": focal_point or None,
+        "quick_reads": quick_reads,
     }
+
+
+def _enforce_verdict_meter_agreement(
+    prose: Dict[str, Any], meters: Dict[str, Any]
+) -> None:
+    """§7.8 "one verdict only": the verdict and the meters must never
+    disagree. When there is truly nothing to base a meter on (both come
+    back null — see rules.py), no phrasing, VLM-authored or templated, is
+    allowed to claim more confidence than that. Mutates ``prose`` in place,
+    using the same hedge fallback.py already ships (and is already
+    lint-covered), so this is enforced once, in one place, regardless of
+    which path wrote the prose.
+    """
+    if meters.get("occasion_match") is None and meters.get("signal_clarity") is None:
+        prose["verdict_phrase"] = "Hard to place"
+        prose["verdict_subtitle"] = "Too little detail to compare pieces."
 
 
 # --- Image-hash cache (§8) -------------------------------------------------
@@ -443,6 +501,15 @@ def _clone_result(db: Session, outfit: Outfit, source: Outfit) -> None:
             formality_note=source_feedback.formality_note,
             proportion_note=source_feedback.proportion_note,
             garment_notes=remapped_notes,
+            # §7.7 glanceable fields — a cache hit is the same photo in the
+            # same context, so these carry over verbatim, same as the
+            # long-form fields above.
+            verdict_phrase=source_feedback.verdict_phrase,
+            verdict_subtitle=source_feedback.verdict_subtitle,
+            focal_point=source_feedback.focal_point,
+            quick_reads=source_feedback.quick_reads,
+            occasion_match=source_feedback.occasion_match,
+            signal_clarity=source_feedback.signal_clarity,
             signals=signals,
             model_version=source_feedback.model_version,
         )

@@ -28,6 +28,20 @@ class RefreshRequest(BaseModel):
     refresh_token: str
 
 
+class PasswordResetRequestRequest(BaseModel):
+    email: EmailStr
+
+
+class PasswordResetConfirmRequest(BaseModel):
+    email: EmailStr
+    code: str = Field(min_length=6, max_length=6, pattern=r"^\d{6}$")
+    new_password: str = Field(min_length=8, max_length=200)
+
+
+class StatusResponse(BaseModel):
+    status: str = "ok"
+
+
 class TokenPair(BaseModel):
     access_token: str
     refresh_token: str
@@ -43,6 +57,10 @@ class QuotaOut(BaseModel):
     scans_remaining: Optional[int]
     rating_credits: int
     ratings_until_next_scan: int
+    # SPEC+ — native IAP (docs/spec-deviations.md #18). Set only while
+    # `plan == "pro"`; a lapsed subscription reports as free instead of a
+    # past date — see quota.effective_plan().
+    pro_expires_at: Optional[datetime] = None
 
 
 class UserOut(BaseModel):
@@ -97,12 +115,43 @@ class GarmentNoteOut(BaseModel):
     note: str
 
 
-class FeedbackOut(BaseModel):
+class MeterOut(BaseModel):
+    """§7.7 — a glanceable meter. Computed deterministically (app/worker/rules.py),
+    never asked of the VLM; see spec-deviations.md for why."""
+
+    level: str  # strong | partial | off
+    score: float
+
+
+class QuickReadOut(BaseModel):
+    dimension: str
+    text: str
+
+
+class FullReadOut(BaseModel):
+    """The pre-§7.7 long-form fields, unchanged — now collapsed behind
+    "See full read" on the client rather than shown by default."""
+
     overall_read: str
     color_note: str
     formality_note: str
     proportion_note: Optional[str] = None
     garment_notes: List[GarmentNoteOut] = Field(default_factory=list)
+
+
+class FeedbackOut(BaseModel):
+    """§5.5 / §7.7. Zone 1+2 fields are top-level (always visible on the
+    client); the pre-existing long-form fields live under ``full_read``
+    (collapsed by default)."""
+
+    verdict_phrase: str
+    verdict_subtitle: str
+    occasion_match: Optional[MeterOut] = None
+    signal_clarity: Optional[MeterOut] = None
+    palette: List[ColourOut] = Field(default_factory=list)
+    focal_point: Optional[str] = None
+    quick_reads: List[QuickReadOut] = Field(default_factory=list)
+    full_read: FullReadOut
 
 
 class OutfitDetail(BaseModel):
@@ -166,6 +215,14 @@ class RatingResponse(BaseModel):
     value: int
     scans_earned: int
     quota: QuotaOut
+
+
+# --- Billing (SPEC+ — native IAP, docs/spec-deviations.md #18) -------------
+class VerifyPurchaseRequest(BaseModel):
+    platform: str  # "ios" | "android"
+    product_id: str
+    purchase_token: Optional[str] = None  # Android (Play Billing)
+    receipt_data: Optional[str] = None  # iOS (App Store receipt, base64)
 
 
 # --- Misc ------------------------------------------------------------------

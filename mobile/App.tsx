@@ -16,17 +16,23 @@ import {
 import { clearSession, fetchMe, loadStoredSession } from './src/api/client';
 import type { Quota } from './src/api/types';
 import { CaptureScreen } from './src/screens/CaptureScreen';
+import { FeedScreen } from './src/screens/FeedScreen';
+import { ForgotPasswordScreen } from './src/screens/ForgotPasswordScreen';
 import { HistoryScreen } from './src/screens/HistoryScreen';
 import { ResultScreen } from './src/screens/ResultScreen';
 import { SignInScreen } from './src/screens/SignInScreen';
+import { UpgradeScreen } from './src/screens/UpgradeScreen';
 import { colors } from './src/theme';
 
 type Screen =
   | { name: 'loading' }
   | { name: 'signIn' }
+  | { name: 'forgotPassword' }
   | { name: 'capture' }
   | { name: 'result'; outfitId: string }
-  | { name: 'history' };
+  | { name: 'history' }
+  | { name: 'feed' }
+  | { name: 'upgrade' };
 
 export default function App(): React.ReactElement {
   const [screen, setScreen] = useState<Screen>({ name: 'loading' });
@@ -74,7 +80,14 @@ export default function App(): React.ReactElement {
         ) : null}
 
         {screen.name === 'signIn' ? (
-          <SignInScreen onSignedIn={() => void enterApp()} />
+          <SignInScreen
+            onSignedIn={() => void enterApp()}
+            onForgotPassword={() => setScreen({ name: 'forgotPassword' })}
+          />
+        ) : null}
+
+        {screen.name === 'forgotPassword' ? (
+          <ForgotPasswordScreen onDone={() => setScreen({ name: 'signIn' })} />
         ) : null}
 
         {screen.name === 'capture' ? (
@@ -85,6 +98,8 @@ export default function App(): React.ReactElement {
               void refreshQuota();
             }}
             onOpenHistory={() => setScreen({ name: 'history' })}
+            onOpenFeed={() => setScreen({ name: 'feed' })}
+            onOpenUpgrade={() => setScreen({ name: 'upgrade' })}
             onSignOut={() => void signOut()}
           />
         ) : null}
@@ -100,6 +115,23 @@ export default function App(): React.ReactElement {
           <HistoryScreen
             onOpen={(outfitId) => setScreen({ name: 'result', outfitId })}
             onBack={() => setScreen({ name: 'capture' })}
+          />
+        ) : null}
+
+        {screen.name === 'feed' ? (
+          <FeedScreen
+            onBack={() => setScreen({ name: 'capture' })}
+            onRated={() => void refreshQuota()}
+          />
+        ) : null}
+
+        {screen.name === 'upgrade' ? (
+          <UpgradeScreen
+            onBack={() => setScreen({ name: 'capture' })}
+            onUpgraded={() => {
+              setScreen({ name: 'capture' });
+              void refreshQuota();
+            }}
           />
         ) : null}
       </SafeAreaView>

@@ -23,12 +23,13 @@ import {
   Switch,
   Text,
   TextInput,
+  useWindowDimensions,
   View,
 } from 'react-native';
 
 import { ApiError, uploadOutfit } from '../api/client';
 import type { Quota } from '../api/types';
-import { Button, Chip, SectionLabel } from '../components/primitives';
+import { Button, Chip, HangerIcon, SectionLabel } from '../components/primitives';
 import {
   CONTEXT_NOTE_MAX_LENGTH,
   MAX_UPLOAD_LONGEST_EDGE,
@@ -36,12 +37,14 @@ import {
   UPLOAD_JPEG_QUALITY,
   type Occasion,
 } from '../config';
-import { colors, radius, sentenceCase, space, type } from '../theme';
+import { colors, radius, sentenceCase, space, type, weight } from '../theme';
 
 interface Props {
   quota: Quota | null;
   onScanStarted: (outfitId: string) => void;
   onOpenHistory: () => void;
+  onOpenFeed: () => void;
+  onOpenUpgrade: () => void;
   onSignOut: () => void;
 }
 
@@ -49,6 +52,8 @@ export function CaptureScreen({
   quota,
   onScanStarted,
   onOpenHistory,
+  onOpenFeed,
+  onOpenUpgrade,
   onSignOut,
 }: Props): React.ReactElement {
   const [imageUri, setImageUri] = useState<string | null>(null);
@@ -57,6 +62,8 @@ export function CaptureScreen({
   const [isPublic, setIsPublic] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [quotaExceeded, setQuotaExceeded] = useState(false);
+  const { height: windowHeight } = useWindowDimensions();
 
   /** §4.1 — downscale before upload to cut bandwidth. */
   const prepare = async (uri: string): Promise<string> => {
@@ -114,6 +121,7 @@ export function CaptureScreen({
     if (!imageUri) return;
     setBusy(true);
     setError(null);
+    setQuotaExceeded(false);
     try {
       const created = await uploadOutfit({
         uri: imageUri,
@@ -127,10 +135,9 @@ export function CaptureScreen({
       setIsPublic(false);
       onScanStarted(created.outfit_id);
     } catch (caught) {
-      if (caught instanceof ApiError && caught.isQuotaExceeded) {
+      if (caught instanceof ApiError) {
         setError(caught.message);
-      } else if (caught instanceof ApiError) {
-        setError(caught.message);
+        setQuotaExceeded(caught.isQuotaExceeded);
       } else {
         setError('Could not reach StyleSignal. Check your connection.');
       }
@@ -145,21 +152,31 @@ export function CaptureScreen({
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
       <ScrollView
+        style={styles.flex}
         contentContainerStyle={styles.container}
         keyboardShouldPersistTaps="handled"
       >
         <View style={styles.header}>
           <Text style={styles.wordmark}>StyleSignal</Text>
-          <Pressable onPress={onOpenHistory} accessibilityRole="button">
-            <Text style={styles.headerLink}>History</Text>
-          </Pressable>
+          <View style={styles.headerLinks}>
+            <Pressable onPress={onOpenFeed} accessibilityRole="button">
+              <Text style={styles.headerLink}>Community</Text>
+            </Pressable>
+            <Pressable onPress={onOpenHistory} accessibilityRole="button">
+              <Text style={styles.headerLink}>History</Text>
+            </Pressable>
+          </View>
         </View>
 
-        {quota ? <QuotaLine quota={quota} /> : null}
+        {quota ? <QuotaLine quota={quota} onOpenUpgrade={onOpenUpgrade} /> : null}
 
         <Pressable
           onPress={() => void pickFrom('library')}
-          style={styles.preview}
+          style={[
+            styles.preview,
+            !imageUri && styles.previewEmptyContainer,
+            imageUri ? { maxHeight: windowHeight * 0.42 } : null,
+          ]}
           accessibilityRole="button"
           accessibilityLabel="Choose a photo"
         >
@@ -167,10 +184,9 @@ export function CaptureScreen({
             <Image source={{ uri: imageUri }} style={styles.previewImage} resizeMode="cover" />
           ) : (
             <View style={styles.previewEmpty}>
+              <HangerIcon />
               <Text style={styles.previewTitle}>Add a photo of the outfit</Text>
-              <Text style={styles.previewHint}>
-                Full length works best, with the whole look in frame.
-              </Text>
+              <Text style={styles.previewHint}>Full length works best.</Text>
             </View>
           )}
         </Pressable>
@@ -178,24 +194,22 @@ export function CaptureScreen({
         <View style={styles.sourceRow}>
           <Button
             variant="secondary"
-            label="Take a photo"
+            label="Take photo"
             onPress={() => void pickFrom('camera')}
             style={styles.sourceButton}
           />
           <View style={{ width: space.sm }} />
           <Button
             variant="secondary"
-            label="Choose from library"
+            label="Library"
             onPress={() => void pickFrom('library')}
             style={styles.sourceButton}
           />
         </View>
 
         <View style={styles.block}>
-          <SectionLabel>Occasion — optional</SectionLabel>
-          <Text style={styles.blockHint}>
-            Tagging a context lets the read speak to it directly.
-          </Text>
+          <SectionLabel>Occasion · Optional</SectionLabel>
+          <Text style={styles.blockHint}>Tagging a context lets the read speak to it.</Text>
           <View style={styles.chipWrap}>
             {OCCASIONS.map((value) => (
               <Chip
@@ -209,10 +223,10 @@ export function CaptureScreen({
         </View>
 
         <View style={styles.block}>
-          <SectionLabel>Anything worth knowing — optional</SectionLabel>
+          <SectionLabel>Anything worth knowing · Optional</SectionLabel>
           <TextInput
             style={styles.noteInput}
-            placeholder="Interview at a design studio, first time meeting the team…"
+            placeholder="First date — want to look sharp, not like I'm trying too hard"
             placeholderTextColor={colors.textMuted}
             value={note}
             onChangeText={(value) => setNote(value.slice(0, CONTEXT_NOTE_MAX_LENGTH))}
@@ -241,6 +255,14 @@ export function CaptureScreen({
         </View>
 
         {error ? <Text style={styles.error}>{error}</Text> : null}
+        {quotaExceeded ? (
+          <Button
+            variant="secondary"
+            label="Upgrade to Pro"
+            onPress={onOpenUpgrade}
+            style={styles.upgradeButton}
+          />
+        ) : null}
 
         <Button
           label="Read this outfit"
@@ -256,14 +278,33 @@ export function CaptureScreen({
   );
 }
 
-function QuotaLine({ quota }: { quota: Quota }): React.ReactElement {
-  const text =
-    quota.scans_remaining === null
-      ? 'Pro — scan as often as you like.'
-      : `${quota.scans_remaining} ${
-          quota.scans_remaining === 1 ? 'scan' : 'scans'
-        } left this month.`;
-  return <Text style={styles.quota}>{text}</Text>;
+function QuotaLine({
+  quota,
+  onOpenUpgrade,
+}: {
+  quota: Quota;
+  onOpenUpgrade: () => void;
+}): React.ReactElement {
+  if (quota.scans_remaining === null) {
+    return <Text style={styles.quota}>Pro — scan as often as you like.</Text>;
+  }
+
+  // §7.9 "scans-left is a subtle pill and an upgrade moment" — "get more"
+  // opens the real Pro paywall (docs/spec-deviations.md #18).
+  const noun = quota.scans_remaining === 1 ? 'scan' : 'scans';
+  return (
+    <Pressable
+      onPress={onOpenUpgrade}
+      style={styles.quotaPill}
+      accessibilityRole="button"
+      accessibilityLabel="Upgrade to Pro"
+    >
+      <Text style={styles.quotaPillStrong}>
+        {quota.scans_remaining} {noun} left
+      </Text>
+      <Text style={styles.quotaPillMuted}> · get more</Text>
+    </Pressable>
+  );
 }
 
 const styles = StyleSheet.create({
@@ -276,8 +317,22 @@ const styles = StyleSheet.create({
     marginBottom: space.xs,
   },
   wordmark: { ...type.title, color: colors.text },
+  headerLinks: { flexDirection: 'row', gap: space.md },
   headerLink: { ...type.meta, color: colors.textMuted },
   quota: { ...type.meta, color: colors.textMuted, marginBottom: space.lg },
+  // §7.9 "scans-left is a subtle pill and an upgrade moment".
+  quotaPill: {
+    flexDirection: 'row',
+    alignSelf: 'flex-start',
+    alignItems: 'baseline',
+    backgroundColor: '#FAF2E1',
+    borderRadius: radius.pill,
+    paddingHorizontal: space.md,
+    paddingVertical: space.xs,
+    marginBottom: space.lg,
+  },
+  quotaPillStrong: { ...type.meta, color: colors.text, fontWeight: weight.medium },
+  quotaPillMuted: { ...type.meta, color: colors.textMuted },
 
   preview: {
     aspectRatio: 3 / 4,
@@ -288,14 +343,24 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
     marginBottom: space.md,
   },
+  // §7.9 "upload card is guided, not a void" — shorter and dashed while
+  // empty, so it doesn't read as a big blank space; becomes the normal
+  // aspect-correct photo frame the moment a photo is chosen.
+  previewEmptyContainer: {
+    aspectRatio: undefined,
+    height: 220,
+    borderStyle: 'dashed',
+    borderWidth: 1.5,
+  },
   previewImage: { width: '100%', height: '100%' },
   previewEmpty: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
     padding: space.lg,
+    gap: space.xs,
   },
-  previewTitle: { ...type.bodyMedium, color: colors.text, marginBottom: space.xs },
+  previewTitle: { ...type.bodyMedium, color: colors.text, marginTop: space.xs },
   previewHint: { ...type.meta, color: colors.textMuted, textAlign: 'center' },
 
   sourceRow: { flexDirection: 'row', marginBottom: space.xl },
@@ -333,5 +398,6 @@ const styles = StyleSheet.create({
   publicHint: { ...type.meta, color: colors.textMuted, marginTop: space.xs },
 
   error: { ...type.meta, color: colors.systemError, marginBottom: space.md },
+  upgradeButton: { marginBottom: space.md },
   submit: { marginBottom: space.sm },
 });

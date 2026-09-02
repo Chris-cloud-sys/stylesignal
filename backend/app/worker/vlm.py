@@ -97,6 +97,15 @@ _GARMENT_SCHEMA = {
     "additionalProperties": False,
 }
 
+_QUICK_READ_DIMENSIONS = (
+    "colour",
+    "formality",
+    "proportion",
+    "pattern",
+    "texture",
+    "fit",
+)
+
 ANALYSIS_SCHEMA = {
     "type": "object",
     "properties": {
@@ -130,6 +139,48 @@ ANALYSIS_SCHEMA = {
                 "additionalProperties": False,
             },
         },
+        # --- §7.7 glanceable result screen ---------------------------------
+        "verdict_phrase": {
+            "type": "string",
+            "description": "Five words or fewer. The single loudest signal.",
+        },
+        "verdict_subtitle": {
+            "type": "string",
+            "description": (
+                "Eight words or fewer. A second, different observation — "
+                "not a restatement of verdict_phrase."
+            ),
+        },
+        "focal_point": {
+            "type": "string",
+            "description": (
+                "Twelve words or fewer, one clause. Where attention lands "
+                "first in the photograph, and what puts it there. A garment "
+                "or a relationship between garments — never the face, hair, "
+                "skin, or body."
+            ),
+        },
+        "quick_reads": {
+            "type": "array",
+            # No minItems/maxItems: Claude's structured-output schema support
+            # only allows 0 or 1 there ("minItems values other than 0 or 1
+            # are not supported" — a real 400 from every live call until
+            # this was caught). Count is enforced by the system prompt
+            # ("three or four short bullets") and by _prose_from_analysis's
+            # [:4] cap in pipeline.py, not by the schema.
+            "items": {
+                "type": "object",
+                "properties": {
+                    "dimension": {"type": "string", "enum": list(_QUICK_READ_DIMENSIONS)},
+                    "text": {
+                        "type": "string",
+                        "description": "Fifteen words or fewer, exactly one sentence.",
+                    },
+                },
+                "required": ["dimension", "text"],
+                "additionalProperties": False,
+            },
+        },
     },
     "required": [
         "person_present",
@@ -139,6 +190,10 @@ ANALYSIS_SCHEMA = {
         "formality_note",
         "proportion_note",
         "garment_notes",
+        "verdict_phrase",
+        "verdict_subtitle",
+        "focal_point",
+        "quick_reads",
     ],
     "additionalProperties": False,
 }
@@ -177,6 +232,22 @@ reads more casual than the rest".
 - Tying a read to the stated occasion: "for a work context, this reads \
 appropriately put-together".
 
+## When the occasion match is weak
+Judge this from the same formality signals and stated occasion you already \
+have — you do not see the computed occasion_match meter, but you can tell \
+when the register runs noticeably more casual or more formal than the \
+occasion calls for. When it does, sharpen the gap instead of staying vague: \
+name the specific thing driving it (an outlier garment, or the register as a \
+whole) and how it diverges — "this reads two steps more casual than a \
+typical evening look" or "the sneakers sit a full register below the rest \
+of the outfit". A comparative line naming the category norm is fine \
+("evening looks in this range tend to sit in darker, less casual \
+footwear"). What is never acceptable, here more than anywhere else in this \
+contract, is turning that gap into a suggested fix — "try loafers instead" \
+is exactly the prescriptive move rule 1 below forbids, and a weak match is \
+not license to make it. Put this in formality_note or the relevant \
+quick_reads item, whichever already carries the formality observation.
+
 ## Forbidden — these are hard rules, not preferences
 1. NO PRESCRIPTION. Never "you should", "swap the", "add a", "try", \
 "consider", "opt for", "I'd recommend", "would look better", "needs a", \
@@ -209,6 +280,31 @@ Neutral, specific, unhurried. Second person is fine for the outfit ("your \
 jacket"), never for the body. Sentence case. No emoji, no exclamation marks, \
 no headings inside the fields. Two to four sentences per note; overall_read may \
 run to five.
+
+# The glanceable read
+Alongside the fields above, you also produce a five-second read — most users \
+never scroll to the long-form fields at all, so this is where the product's \
+first impression actually lives:
+- verdict_phrase: five words or fewer. The single loudest signal.
+- verdict_subtitle: eight words or fewer. A second, genuinely different \
+observation — never a restatement of verdict_phrase in other words.
+- focal_point: twelve words or fewer, one clause. Where attention lands \
+first in the photograph, and what puts it there. Always a garment or a \
+relationship between garments — never the face, hair, skin, or body. \
+StyleSignal reads the outfit, not the person wearing it, and that holds \
+here exactly as strictly as it does everywhere else in this contract.
+- quick_reads: three or four short bullets, each tagged with a dimension \
+(colour, formality, proportion, pattern, texture, or fit). Exactly one \
+sentence, fifteen words or fewer, no exceptions.
+
+These four obey every rule above — no prescription, no evaluation of the \
+person, no numbers, no negative absolutes. Two more rules specific to them: \
+first, do not repeat overall_read verbatim, only shorter — say something \
+overall_read does not. Second, do not make a global "this all matches" or \
+"this is coherent" claim — that judgment is rendered elsewhere on the screen \
+as a separate signal you do not see, so a global claim from you risks \
+contradicting it. Your job in these four fields is to name specific, visible \
+things, not to summarise the whole look into a verdict on top of a verdict.
 """
 
 

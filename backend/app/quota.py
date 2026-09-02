@@ -2,14 +2,18 @@
 
 Two things live here:
 
-* **Free tier** — a hard monthly allowance (§1: 5 scans/month) plus scans earned
-  by rating other people's outfits. The earn loop is the free-tier engagement
-  hook *and* the training-data source (§2.3), so it is quota logic, not a
-  bolt-on.
+* **Free tier** — a hard monthly allowance (§1 said 5/month; raised to 10 per
+  entry #13 of ``docs/spec-deviations.md``, then to 50 for the testing pass
+  in entry #17) plus scans earned by rating other people's outfits. The earn
+  loop is the free-tier engagement hook *and* the training-data source
+  (§2.3), so it is quota logic, not a bolt-on.
 * **Pro tier** — §1 is explicit that "unlimited" is a cost trap and must carry a
   *soft* fair-use ceiling with graceful degradation, "not an advertised hard
   limit". So Pro is never refused: past the ceiling the scan still runs, at
-  reduced VLM effort. :func:`is_degraded` is what the pipeline reads.
+  reduced VLM effort. :func:`is_degraded` is what the pipeline reads. Since
+  entry #18, Pro is a real native subscription (``app.billing`` verifies it
+  with Apple/Google) that can lapse — :func:`effective_plan` is what
+  everything below actually checks, never the raw ``user.plan`` column.
 
 The monthly reset is lazy rather than a cron (§5.2): the counter carries the
 period it belongs to, so a missed cron run cannot silently deny a user quota.
@@ -41,9 +45,28 @@ def roll_period(db: Session, user: User) -> None:
         db.commit()
 
 
+def effective_plan(user: User) -> str:
+    """The plan that actually governs quota right now.
+
+    A native-IAP subscription (docs/spec-deviations.md #18) can lapse
+    without anything telling the server — there's no cron here, same as
+    the monthly counter above. ``pro_expires_at`` is the real source of
+    truth, not the raw ``plan`` column: past its expiry, a user reverts to
+    free the next time anything reads their quota, lazily, exactly like
+    ``roll_period`` above. ``pro_expires_at is None`` means no expiry at
+    all — an admin/test override, not a real subscription — so it stays
+    Pro.
+    """
+    if user.plan == "pro" and (
+        user.pro_expires_at is None or user.pro_expires_at > datetime.now(timezone.utc)
+    ):
+        return "pro"
+    return "free"
+
+
 def monthly_allowance(user: User) -> Optional[int]:
     """Hard allowance for the plan, or ``None`` when there is no hard cap."""
-    if user.plan == "pro":
+    if effective_plan(user) == "pro":
         return None  # soft ceiling only — see is_degraded()
     return settings.free_monthly_scans
 
@@ -58,7 +81,7 @@ def scans_remaining(user: User) -> Optional[int]:
 def is_degraded(user: User) -> bool:
     """Pro user past the quiet fair-use ceiling (§1)."""
     return (
-        user.plan == "pro"
+        effective_plan(user) == "pro"
         and user.scans_used_this_month >= settings.pro_soft_monthly_cap
     )
 
@@ -76,7 +99,7 @@ def consume_scan(db: Session, user: User) -> None:
                 settings.free_monthly_scans, settings.ratings_per_earned_scan
             ),
             {
-                "plan": user.plan,
+                "plan": effective_plan(user),
                 "monthly_allowance": monthly_allowance(user),
                 "scans_used_this_month": user.scans_used_this_month,
                 "earned_scans": user.earned_scans,
@@ -114,11 +137,12 @@ def credit_rating(db: Session, user: User) -> int:
 def quota_out(user: User) -> QuotaOut:
     threshold = max(1, settings.ratings_per_earned_scan)
     return QuotaOut(
-        plan=user.plan,
+        plan=effective_plan(user),
         scans_used_this_month=user.scans_used_this_month,
         monthly_allowance=monthly_allowance(user),
         earned_scans=user.earned_scans,
         scans_remaining=scans_remaining(user),
         rating_credits=user.rating_credits,
         ratings_until_next_scan=threshold - (user.rating_credits % threshold),
+        pro_expires_at=user.pro_expires_at if effective_plan(user) == "pro" else None,
     )

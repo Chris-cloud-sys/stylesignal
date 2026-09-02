@@ -35,13 +35,42 @@ export interface GarmentNote {
   note: string;
 }
 
-/** §5.5 — the descriptive fields. All prose; never a score (§7.3). */
-export interface Feedback {
+/** §7.7 — a glanceable meter. Computed deterministically on the backend
+ * (never asked of the VLM), so `level` is always one of these three. */
+export interface Meter {
+  level: 'strong' | 'partial' | 'off';
+  score: number;
+}
+
+export interface QuickRead {
+  dimension: string;
+  text: string;
+}
+
+/** The pre-§7.7 long-form fields, unchanged — now collapsed behind "See
+ * full read" instead of shown by default. */
+export interface FullRead {
   overall_read: string;
   color_note: string;
   formality_note: string;
   proportion_note?: string | null;
   garment_notes: GarmentNote[];
+}
+
+/**
+ * §5.5 / §7.7 — the descriptive fields. All prose or a computed meter; never
+ * a score of the wearer (§7.3). Zone 1+2 fields are top-level; the long-form
+ * read lives under `full_read`.
+ */
+export interface Feedback {
+  verdict_phrase: string;
+  verdict_subtitle: string;
+  occasion_match?: Meter | null;
+  signal_clarity?: Meter | null;
+  palette: Colour[];
+  focal_point?: string | null;
+  quick_reads: QuickRead[];
+  full_read: FullRead;
 }
 
 export interface OutfitDetail {
@@ -86,6 +115,9 @@ export interface Quota {
   scans_remaining: number | null;
   rating_credits: number;
   ratings_until_next_scan: number;
+  /** SPEC+ — native IAP (docs/spec-deviations.md #18). Set only while
+   * `plan === 'pro'`; a lapsed subscription reports as free instead. */
+  pro_expires_at?: string | null;
 }
 
 export interface Me {
@@ -108,3 +140,28 @@ export interface ApiErrorBody {
     details?: Record<string, unknown>;
   };
 }
+
+// --- Community rating loop (§6.5) — flag-gated, see docs/spec-deviations.md #17.
+export type RatingDimension = 'coherence' | 'occasion_fit' | 'color';
+
+export interface FeedItem {
+  outfit_id: string;
+  thumb_url?: string | null;
+  occasion?: string | null;
+}
+
+export interface FeedResponse {
+  items: FeedItem[];
+  cursor?: string | null;
+}
+
+export interface RatingResponse {
+  outfit_id: string;
+  dimension: RatingDimension;
+  value: number;
+  scans_earned: number;
+  quota: Quota;
+}
+
+// --- Native in-app purchases (§SPEC+, see docs/spec-deviations.md #18) -----
+export type IapPlatform = 'ios' | 'android';

@@ -10,9 +10,14 @@ import * as SecureStore from 'expo-secure-store';
 import { API_BASE_URL } from '../config';
 import type {
   ApiErrorBody,
+  FeedResponse,
+  IapPlatform,
   Me,
   OutfitDetail,
   OutfitListResponse,
+  Quota,
+  RatingDimension,
+  RatingResponse,
   TokenPair,
 } from './types';
 
@@ -183,6 +188,24 @@ export function fetchMe(): Promise<Me> {
   return request<Me>('/v1/auth/me');
 }
 
+export function requestPasswordReset(email: string): Promise<void> {
+  return request<{ status: string }>(
+    '/v1/auth/password-reset/request',
+    json({ email }),
+  ).then(() => undefined);
+}
+
+export function confirmPasswordReset(
+  email: string,
+  code: string,
+  newPassword: string,
+): Promise<void> {
+  return request<{ status: string }>(
+    '/v1/auth/password-reset/confirm',
+    json({ email, code, new_password: newPassword }),
+  ).then(() => undefined);
+}
+
 // --- Outfits (§6.1-§6.4) ---------------------------------------------------
 export async function uploadOutfit(params: {
   uri: string;
@@ -220,6 +243,43 @@ export function fetchHistory(cursor?: string | null): Promise<OutfitListResponse
 
 export function deleteOutfit(outfitId: string): Promise<void> {
   return request<void>(`/v1/outfits/${outfitId}`, { method: 'DELETE' });
+}
+
+// --- Community rating loop (§6.5) -------------------------------------------
+export function fetchFeed(cursor?: string | null): Promise<FeedResponse> {
+  const query = cursor ? `?limit=20&cursor=${encodeURIComponent(cursor)}` : '?limit=20';
+  return request<FeedResponse>(`/v1/feed${query}`);
+}
+
+export function rateOutfit(
+  outfitId: string,
+  dimension: RatingDimension,
+  value: number,
+): Promise<RatingResponse> {
+  return request<RatingResponse>(`/v1/outfits/${outfitId}/ratings`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ dimension, value }),
+  });
+}
+
+// --- Billing (SPEC+ — native IAP, docs/spec-deviations.md #18) -------------
+export function verifyPurchase(params: {
+  platform: IapPlatform;
+  productId: string;
+  purchaseToken?: string | null;
+  receiptData?: string | null;
+}): Promise<Quota> {
+  return request<Quota>('/v1/billing/verify-purchase', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      platform: params.platform,
+      product_id: params.productId,
+      purchase_token: params.purchaseToken,
+      receipt_data: params.receiptData,
+    }),
+  });
 }
 
 /** Signed media URLs are returned as paths by the local storage backend. */

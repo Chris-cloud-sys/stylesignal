@@ -5,20 +5,42 @@
  * retry). Nothing on this screen colour-codes a verdict — §2.6 forbids it, and
  * the feedback is language, not a grade.
  */
-import React from 'react';
-import { Image, ScrollView, StyleSheet, Text, View } from 'react-native';
+import * as Sharing from 'expo-sharing';
+import React, { useRef, useState } from 'react';
+import { Image, ScrollView, Share, StyleSheet, Text, View } from 'react-native';
+import { captureRef } from 'react-native-view-shot';
 
 import { absoluteMediaUrl } from '../api/client';
-import type { FailureReason, Garment, OutfitDetail } from '../api/types';
+import type {
+  FailureReason,
+  Feedback,
+  Garment,
+  Meter as MeterData,
+  OutfitDetail,
+  QuickRead,
+} from '../api/types';
 import { useOutfitPolling } from '../api/useOutfitPolling';
 import {
   Button,
+  Disclosure,
   Divider,
+  dimensionLabel,
+  EyeBadge,
+  FormalityStepBars,
+  IconBadge,
+  Meter,
   SectionLabel,
   SkeletonLine,
   Swatches,
 } from '../components/primitives';
-import { colors, radius, sentenceCase, space, type } from '../theme';
+import { ShareCard } from '../components/ShareCard';
+import { colors, radius, sentenceCase, space, type, weight } from '../theme';
+
+/** §7.7 meter labels — plain English, not the wire-format field name. */
+const METER_LABELS: Record<'occasion_match' | 'signal_clarity', string> = {
+  occasion_match: 'Occasion match',
+  signal_clarity: 'Signal clarity',
+};
 
 interface Props {
   outfitId: string;
@@ -95,7 +117,9 @@ function Pending({
     <ScrollView contentContainerStyle={styles.container}>
       <Text style={styles.stage}>Reading the look</Text>
       {thumb ? (
-        <Image source={{ uri: thumb }} style={styles.hero} resizeMode="cover" />
+        <View style={styles.hero}>
+          <Image source={{ uri: thumb }} style={styles.heroImage} resizeMode="contain" />
+        </View>
       ) : (
         <View style={[styles.hero, styles.heroPlaceholder]} />
       )}
@@ -132,49 +156,64 @@ function Complete({
 }): React.ReactElement {
   const feedback = outfit.feedback;
   const thumb = absoluteMediaUrl(outfit.thumb_url);
-  const garments = outfit.garments ?? [];
+  const shareCardRef = useRef<View>(null);
+  const [sharing, setSharing] = useState(false);
 
-  const noteFor = (garmentId: string): string | undefined =>
-    feedback?.garment_notes.find((note) => note.garment_id === garmentId)?.note;
+  const handleShare = async (): Promise<void> => {
+    if (!feedback || sharing) return;
+    setSharing(true);
+    try {
+      await shareFeedbackImage(shareCardRef, feedback);
+    } finally {
+      setSharing(false);
+    }
+  };
 
   return (
     <ScrollView contentContainerStyle={styles.container}>
       {thumb ? (
-        <Image source={{ uri: thumb }} style={styles.hero} resizeMode="cover" />
+        <View style={styles.hero}>
+          <Image source={{ uri: thumb }} style={styles.heroImage} resizeMode="contain" />
+          {feedback ? (
+            // §7.8 "one verdict only" lives ON the photo — the read is the
+            // headline, not a caption underneath it.
+            <View style={styles.heroScrim}>
+              {outfit.occasion ? (
+                <Text style={styles.heroOccasion}>
+                  Read for {sentenceCase(outfit.occasion)}
+                </Text>
+              ) : null}
+              <Text style={styles.heroVerdictPhrase}>{feedback.verdict_phrase}</Text>
+              {feedback.verdict_subtitle ? (
+                <Text style={styles.heroVerdictSubtitle}>{feedback.verdict_subtitle}</Text>
+              ) : null}
+            </View>
+          ) : null}
+        </View>
       ) : null}
 
-      {outfit.occasion ? (
-        <Text style={styles.occasion}>
-          Read for {sentenceCase(outfit.occasion)}
-        </Text>
+      {feedback ? <Headline feedback={feedback} /> : null}
+      {feedback && feedback.quick_reads.length > 0 ? (
+        <QuickReads items={feedback.quick_reads} garments={outfit.garments ?? []} />
       ) : null}
 
       {feedback ? (
         <>
-          <Text style={styles.overall}>{feedback.overall_read}</Text>
-
           <Divider />
-
-          <Section label="Colour" body={feedback.color_note} />
-          <Section label="Formality" body={feedback.formality_note} />
-          {feedback.proportion_note ? (
-            <Section label="Proportion and line" body={feedback.proportion_note} />
-          ) : null}
-
-          {garments.length > 0 ? (
-            <>
-              <Divider />
-              <SectionLabel>Piece by piece</SectionLabel>
-              {garments.map((garment) => (
-                <GarmentRow
-                  key={garment.garment_id}
-                  garment={garment}
-                  note={noteFor(garment.garment_id)}
-                />
-              ))}
-            </>
-          ) : null}
+          <Disclosure label="See full read">
+            <FullRead feedback={feedback} garments={outfit.garments ?? []} />
+          </Disclosure>
         </>
+      ) : null}
+
+      {feedback ? (
+        <Button
+          variant="secondary"
+          label="Share this read"
+          onPress={handleShare}
+          busy={sharing}
+          style={styles.shareButton}
+        />
       ) : null}
 
       <Divider />
@@ -183,7 +222,175 @@ function Complete({
       </Text>
 
       <Button label="Scan another outfit" onPress={onDone} style={styles.cta} />
+
+      {/* Off-screen — mounted so it's ready to capture, never shown to the user. */}
+      {feedback ? (
+        <View style={styles.offscreen} pointerEvents="none">
+          <ShareCard
+            ref={shareCardRef}
+            photoUri={thumb}
+            occasion={outfit.occasion}
+            feedback={feedback}
+          />
+        </View>
+      ) : null}
     </ScrollView>
+  );
+}
+
+// --- Share ("Share this read") ----------------------------------------------
+// Captures the off-screen ShareCard (see components/ShareCard.tsx) to a PNG
+// and hands it to the native share sheet. Needs a dev client build —
+// react-native-view-shot isn't in Expo Go's managed SDK (see
+// docs/spec-deviations.md #14). Falls back to a text-only share if the
+// image capture or the share sheet itself is unavailable, so this degrades
+// gracefully rather than dead-ending.
+function buildShareText(feedback: Feedback): string {
+  const lines = [feedback.verdict_phrase];
+  if (feedback.verdict_subtitle) lines.push(feedback.verdict_subtitle);
+  if (feedback.quick_reads.length > 0) {
+    lines.push('');
+    for (const item of feedback.quick_reads) {
+      lines.push(`${sentenceCase(item.dimension)}: ${item.text}`);
+    }
+  }
+  lines.push('');
+  lines.push('— StyleSignal');
+  return lines.join('\n');
+}
+
+function shareFeedbackText(feedback: Feedback): void {
+  Share.share({ message: buildShareText(feedback) }).catch(() => {
+    // User cancelled or the share sheet failed to open — nothing to recover.
+  });
+}
+
+async function shareFeedbackImage(
+  cardRef: React.RefObject<View | null>,
+  feedback: Feedback,
+): Promise<void> {
+  try {
+    const canShareFile = await Sharing.isAvailableAsync();
+    if (!canShareFile || !cardRef.current) {
+      shareFeedbackText(feedback);
+      return;
+    }
+    const uri = await captureRef(cardRef, { format: 'png', quality: 1 });
+    await Sharing.shareAsync(uri, { mimeType: 'image/png', dialogTitle: 'Share this read' });
+  } catch {
+    // Capture or the share sheet failed (or the user cancelled) — text still
+    // gets the read across.
+    shareFeedbackText(feedback);
+  }
+}
+
+// --- Zone 1: headline (§7.7) -------------------------------------------------
+function Headline({ feedback }: { feedback: Feedback }): React.ReactElement {
+  const meters: Array<['occasion_match' | 'signal_clarity', MeterData | null | undefined]> = [
+    ['occasion_match', feedback.occasion_match],
+    ['signal_clarity', feedback.signal_clarity],
+  ];
+  const activeMeters = meters.filter(([, meter]) => meter != null) as Array<
+    ['occasion_match' | 'signal_clarity', MeterData]
+  >;
+
+  return (
+    <View style={styles.headline}>
+      {activeMeters.length > 0 ? (
+        <View style={styles.meterRow}>
+          {activeMeters.map(([key, meter]) => (
+            <Meter key={key} label={METER_LABELS[key]} level={meter.level} score={meter.score} />
+          ))}
+        </View>
+      ) : null}
+
+      {feedback.palette.length > 0 ? (
+        <View style={styles.paletteBlock}>
+          <SectionLabel>Garment palette</SectionLabel>
+          <Swatches hexes={feedback.palette.map((colour) => colour.hex)} />
+        </View>
+      ) : null}
+
+      {feedback.focal_point ? (
+        <View style={styles.focalPointBox}>
+          <EyeBadge />
+          <Text style={styles.focalPointText}>
+            <Text style={styles.focalPointLabel}>Eye lands at: </Text>
+            {feedback.focal_point}
+          </Text>
+        </View>
+      ) : null}
+    </View>
+  );
+}
+
+// --- Zone 2: quick reads (§7.7) ----------------------------------------------
+function QuickReads({
+  items,
+  garments,
+}: {
+  items: QuickRead[];
+  garments: Garment[];
+}): React.ReactElement {
+  return (
+    <View style={styles.quickReads}>
+      {items.map((item, index) => (
+        <View key={`${item.dimension}-${index}`} style={styles.quickReadItem}>
+          <IconBadge dimension={item.dimension} />
+          <View style={styles.quickReadBody}>
+            <SectionLabel>{dimensionLabel(item.dimension)}</SectionLabel>
+            <Text style={styles.quickRead}>{item.text}</Text>
+            {/* §7.8 "formality quick read gets a step indicator" — the
+                only ordinal one of the four, so it's the only one that
+                earns a chart; colour/texture/fit stay icon + text. */}
+            {item.dimension.toLowerCase() === 'formality' ? (
+              <FormalityStepBars garments={garments} />
+            ) : null}
+          </View>
+        </View>
+      ))}
+    </View>
+  );
+}
+
+// --- Zone 3: full read (pre-§7.7 screen, now collapsed) ----------------------
+function FullRead({
+  feedback,
+  garments,
+}: {
+  feedback: Feedback;
+  garments: Garment[];
+}): React.ReactElement {
+  const fullRead = feedback.full_read;
+  const noteFor = (garmentId: string): string | undefined =>
+    fullRead.garment_notes.find((note) => note.garment_id === garmentId)?.note;
+
+  return (
+    <>
+      <Text style={styles.overall}>{fullRead.overall_read}</Text>
+
+      <Divider />
+
+      <Section label="Colour" body={fullRead.color_note} />
+      <Section label="Formality" body={fullRead.formality_note} />
+      {fullRead.proportion_note ? (
+        <Section label="Proportion and line" body={fullRead.proportion_note} />
+      ) : null}
+
+      {garments.length > 0 ? (
+        <>
+          <Divider />
+          <SectionLabel>Piece by piece</SectionLabel>
+          {garments.map((garment) => (
+            <GarmentRow
+              key={garment.garment_id}
+              garment={garment}
+              note={noteFor(garment.garment_id)}
+            />
+          ))}
+        </>
+      ) : null}
+    </>
   );
 }
 
@@ -244,19 +451,90 @@ function Centered({
 const styles = StyleSheet.create({
   container: { padding: space.lg, paddingBottom: space.xxl },
   stage: { ...type.meta, color: colors.textMuted, marginBottom: space.md },
+  // §7.8 the hero is a container for the photo AND the scrim-mounted
+  // verdict, not the `<Image>` itself — that's what makes the overlay
+  // possible.
   hero: {
     width: '100%',
     aspectRatio: 3 / 4,
     borderRadius: radius.lg,
     backgroundColor: colors.surface,
     marginBottom: space.lg,
+    overflow: 'hidden',
   },
+  // `contain`, never `cover` — §7.8 "never crop the head." A photo whose
+  // aspect ratio doesn't match the frame letterboxes onto `colors.surface`
+  // instead of losing the top of the frame.
+  heroImage: { width: '100%', height: '100%' },
   heroPlaceholder: { borderWidth: 1, borderColor: colors.border },
+  // Pinned to the bottom of the photo, not the screen — §7.8 "one verdict
+  // only" reads as part of the photograph, the way the mockup has it.
+  heroScrim: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(26,26,26,0.72)',
+    paddingHorizontal: space.lg,
+    paddingTop: space.lg,
+    paddingBottom: space.lg,
+  },
+  heroOccasion: { ...type.meta, color: colors.background, marginBottom: space.xs },
+  // Deliberately bigger than the shared `type.display` token (used elsewhere
+  // for the sign-in wordmark) — this is a targeted push for the verdict's
+  // visual weight, not a change to the type scale generally.
+  heroVerdictPhrase: {
+    fontSize: 34,
+    lineHeight: 40,
+    fontWeight: weight.regular,
+    letterSpacing: -0.3,
+    color: colors.background,
+  },
+  heroVerdictSubtitle: {
+    ...type.body,
+    fontSize: 17,
+    lineHeight: 24,
+    color: colors.background,
+    opacity: 0.85,
+    marginTop: space.xs,
+  },
   pendingHint: { ...type.body, color: colors.textMuted, marginBottom: space.xl },
   skeletonBlock: { marginBottom: space.xl },
 
-  occasion: { ...type.meta, color: colors.textMuted, marginBottom: space.sm },
   overall: { ...type.body, color: colors.text, fontSize: 18, lineHeight: 28 },
+
+  // --- §7.7 Zone 1: headline ---
+  headline: { marginBottom: space.lg },
+  meterRow: { flexDirection: 'row', gap: space.lg, marginBottom: space.md },
+  paletteBlock: { marginBottom: space.md },
+  // A contained tag, not a full-width paragraph — matches the design
+  // canvas's pill treatment, but as a box that wraps rather than a rigid
+  // single-line pill, since focal_point can run up to twelve words.
+  focalPointBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: space.sm,
+    alignSelf: 'flex-start',
+    maxWidth: '100%',
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surface,
+    borderRadius: radius.md,
+    paddingHorizontal: space.md,
+    paddingVertical: space.sm,
+    marginTop: space.sm,
+  },
+  focalPointLabel: { ...type.meta, color: colors.textMuted },
+  focalPointText: { ...type.meta, color: colors.text, fontWeight: weight.medium, flexShrink: 1 },
+
+  // --- §7.7 Zone 2: quick reads ---
+  quickReads: { gap: space.lg, marginBottom: space.lg },
+  quickReadItem: { flexDirection: 'row', gap: space.sm },
+  quickReadBody: { flex: 1, gap: space.xs },
+  quickRead: { ...type.body, fontSize: 17, lineHeight: 25, color: colors.text },
+
+  shareButton: { marginBottom: space.md },
+  offscreen: { position: 'absolute', top: 0, left: -2000 },
 
   section: { marginBottom: space.lg },
   sectionBody: { ...type.body, color: colors.text },

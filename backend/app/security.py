@@ -44,6 +44,23 @@ def verify_password(password: str, stored: str) -> bool:
         return False
 
 
+# --- Password reset codes ---------------------------------------------------
+# A 6-digit code, not a password: the threat model is "guessable within a
+# short-lived, attempt-limited, rate-limited window", not "worth slow
+# brute-force-resistant hashing forever". SHA-256 is enough; the real
+# protection is app/routers/auth.py's expiry + single-use + attempt cap.
+def generate_reset_code() -> str:
+    return "{0:06d}".format(secrets.randbelow(1_000_000))
+
+
+def hash_reset_code(code: str) -> str:
+    return hashlib.sha256(code.encode("utf-8")).hexdigest()
+
+
+def verify_reset_code(code: str, stored_hash: str) -> bool:
+    return hmac.compare_digest(hash_reset_code(code), stored_hash)
+
+
 # --- Tokens ----------------------------------------------------------------
 def _encode(payload: Dict[str, Any]) -> str:
     return jwt.encode(payload, settings.jwt_secret, algorithm=settings.jwt_algorithm)

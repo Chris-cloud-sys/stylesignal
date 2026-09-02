@@ -38,7 +38,7 @@ uvicorn app.main:app --reload --port 8000
 Check it: <http://127.0.0.1:8000/health> · API docs at `/docs`.
 
 ```bash
-pytest          # 119 tests, no API key or network needed
+pytest          # 141 tests, no API key or network needed
 ```
 
 ### 2. Mobile
@@ -73,6 +73,7 @@ emulator, not your machine — `src/config.ts` already remaps `127.0.0.1` to
 | §5 All seven tables, including the v2 ones (empty) | ✅ |
 | §6 Every endpoint | ✅ |
 | §7 Descriptive contract + lint-and-regenerate + fallback | ✅ |
+| §7.7 Glanceable result screen — verdict, meters, quick reads, collapsed full read | ✅ |
 | §8 Auth, privacy, rate limits, observability, cost control, idempotency | ✅ |
 
 Explicitly deferred to v2, exactly as §9 orders it: custom segmentation, CLIP
@@ -92,7 +93,8 @@ POST /v1/outfits  ──►  202 {outfit_id, status: "pending"}   (gateway retur
                                    3. VLM call       §7.5  garments + descriptive prose, one shot
                                    4. lint           §7.5  reject prescriptive/evaluative copy, regenerate
                                    5. rule signals   §4.7  harmony, formality spread, proportion flags
-                                   6. persist        §5.5  status → complete
+                                   6. meters         §7.7  occasion match + signal clarity, from step 5 — never the VLM
+                                   7. persist        §5.5  status → complete
 
 GET /v1/outfits/{id}  ──►  poll at 1.5s backing off to 4s (§6.6)
 ```
@@ -163,7 +165,7 @@ trap. Four things guard it:
    reuse the earlier result with no model spend. Keyed on both because the
    notes are occasion-dependent: the same photo tagged `work` and `evening`
    must not share feedback.
-2. **Free-tier allowance** — 5 scans/month, charged before any work so parallel
+2. **Free-tier allowance** — 10 scans/month, charged before any work so parallel
    uploads cannot overrun it.
 3. **Pro soft ceiling** — §1 requires graceful degradation, "not an advertised
    hard limit". Past the ceiling a Pro scan is never refused; it runs at

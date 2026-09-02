@@ -58,7 +58,11 @@ class Settings(BaseSettings):
     vlm_disabled: bool = False
 
     # --- Quotas / cost control (§1, §8) ----------------------------------
-    free_monthly_scans: int = 5
+    # Raised 10 -> 50 for the device-testing pass around the §7.8/§7.9
+    # redesign (2026-08-30) — a deliberately temporary bump, not a pricing
+    # decision; see docs/spec-deviations.md #17. Drop it back down once
+    # testing wraps.
+    free_monthly_scans: int = 50
     scans_earned_per_rating: int = 1
     ratings_per_earned_scan: int = 3
     pro_soft_monthly_cap: int = 300
@@ -66,10 +70,33 @@ class Settings(BaseSettings):
     max_longest_edge: int = 1600
     thumb_longest_edge: int = 480
 
+    # --- Outbound email (SPEC+ — password reset) --------------------------
+    # console | resend. console just logs the code (see app/email.py);
+    # resend sends a real email via the Resend API.
+    email_backend: str = "console"
+    resend_api_key: Optional[str] = None
+    email_from: str = "StyleSignal <onboarding@resend.dev>"
+
     # --- Community rating loop (§6.5) ------------------------------------
     # §9 defers the feed/rating endpoints to v2, so they ship built but off.
     # Flipping this on activates them and the §1 earn-by-rating free-tier hook.
     community_enabled: bool = False
+
+    # --- Native in-app purchases (SPEC+, approved 2026-08-30) -------------
+    # See docs/spec-deviations.md #18. Both stores' real product IDs are set
+    # here (not hardcoded in app.billing) so a sandbox vs. production
+    # product can be swapped per environment without a code change.
+    pro_monthly_price_usd: float = 4.99
+    iap_product_id_ios: str = "stylesignal_pro_monthly"
+    iap_product_id_android: str = "stylesignal_pro_monthly"
+    # App Store Connect -> your app -> App Information -> App-Specific
+    # Shared Secret. Needed to verify receipts via verifyReceipt.
+    apple_shared_secret: Optional[str] = None
+    # Play Console package name (e.g. "com.stylesignal.app") and a Google
+    # Cloud service account's JSON key (the whole file's contents, as one
+    # env value) with access to the Play Developer API for that app.
+    google_play_package_name: Optional[str] = None
+    google_play_service_account_json: Optional[str] = None
 
     # --- Feedback engine version, stamped onto every row (§5.5) ----------
     feedback_engine_version: str = "v1.0.0"

@@ -27,6 +27,11 @@ Pillow>=10.2
 # recent SDK — leave this unpinned unless you have a reason not to.
 anthropic>=0.69
 
+# Native in-app purchases (SPEC+, docs/spec-deviations.md #18) — signs the
+# JWT-bearer OAuth2 flow for the Play Developer API's service account.
+# Wheels-only on Windows/cp39, same as everything else here.
+google-auth>=2.28
+
 # --- Optional, production only -------------------------------------------
 # Postgres instead of SQLite:
 #   psycopg[binary]>=3.1

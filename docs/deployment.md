@@ -121,7 +121,7 @@ over it; `app/quota.py`'s scan quota is what actually protects VLM spend.
 | `STYLESIGNAL_STORAGE_BACKEND` | `s3` |
 | `STYLESIGNAL_QUEUE_BACKEND` | `arq` |
 | `STYLESIGNAL_RATELIMIT_BACKEND` | `redis` once you run more than one gateway worker |
-| `STYLESIGNAL_FREE_MONTHLY_SCANS` | 5 per §1 (the test config uses 3) |
+| `STYLESIGNAL_FREE_MONTHLY_SCANS` | 10 — §1 said 5, raised per deviations #13 (the test config uses 3) |
 | `STYLESIGNAL_PRO_SOFT_MONTHLY_CAP` | Set from measured COGS, not a guess |
 
 Rotating `STYLESIGNAL_JWT_SECRET` invalidates every session **and** every

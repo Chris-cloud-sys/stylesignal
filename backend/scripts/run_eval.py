@@ -30,9 +30,12 @@ from app.config import get_settings  # noqa: E402
 from app.models import OCCASIONS  # noqa: E402
 from app.worker.colour import dominant_colours  # noqa: E402
 from app.worker.fallback import build_fallback_feedback  # noqa: E402
-from app.worker.pipeline import _normalise_garments  # noqa: E402
+from app.worker.pipeline import (  # noqa: E402
+    _detection_failure_reason,
+    _normalise_garments,
+)
 from app.worker.preprocess import UndecodableImage, preprocess  # noqa: E402
-from app.worker.rules import build_signals  # noqa: E402
+from app.worker.rules import build_signals, compute_meters  # noqa: E402
 from app.worker.vlm import VLMUnavailable, analyse_outfit  # noqa: E402
 
 PHOTOS_DIR = Path(__file__).resolve().parent.parent / "evals" / "photos"
@@ -124,14 +127,19 @@ def _run_one(path: Path) -> Dict[str, Any]:
 
     detected = _normalise_garments(analysis)
 
-    if analysis is not None and not detected:
-        person_present = bool(analysis.get("person_present"))
+    # Same check the real pipeline makes (app/worker/pipeline.py) — a
+    # flat-lay can still yield detected garments, but with no person
+    # wearing them it must fail as no_person, not generate feedback for
+    # nobody's outfit. Reusing the pipeline's own function so the eval
+    # harness can never silently drift from what a real scan would do.
+    failure_reason = _detection_failure_reason(analysis, detected)
+    if failure_reason is not None:
         return {
             "file": path.name,
             "occasion": occasion,
             "vlm_used": True,
             "vlm": vlm_meta,
-            "failure_reason": "no_person" if not person_present else "no_garments_detected",
+            "failure_reason": failure_reason,
         }
 
     garment_dicts = []
@@ -151,11 +159,14 @@ def _run_one(path: Path) -> Dict[str, Any]:
 
     signals = build_signals(garment_dicts, outfit_palette, occasion)
     signals["vlm"] = vlm_meta
+    meters = compute_meters(signals, occasion)
 
     if analysis is not None:
         prose = _prose_from_analysis(analysis, garment_dicts)
     else:
-        prose = build_fallback_feedback(signals, garment_dicts, occasion)
+        prose = build_fallback_feedback(
+            signals, garment_dicts, occasion, meters.get("occasion_match")
+        )
 
     return {
         "file": path.name,
@@ -178,6 +189,8 @@ def _run_one(path: Path) -> Dict[str, Any]:
             "formality_coherence": signals["formality"].get("coherence"),
             "proportion_flags": signals["proportion"].get("flags"),
         },
+        "meters": meters,
+        "palette": signals["colour"].get("palette") or [],
         "feedback": prose,
     }
 
@@ -195,12 +208,26 @@ def _prose_from_analysis(analysis: Dict[str, Any], garment_dicts: List[Dict[str,
             notes.append({"garment": garment_dicts[gi]["category"], "note": str(note.get("note") or "")})
 
     proportion = (analysis.get("proportion_note") or "").strip()
+
+    quick_reads = []
+    for item in analysis.get("quick_reads") or []:
+        if not isinstance(item, dict):
+            continue
+        text = str(item.get("text") or "").strip()
+        dimension = str(item.get("dimension") or "").strip()
+        if text and dimension:
+            quick_reads.append({"dimension": dimension, "text": text})
+
     return {
         "overall_read": str(analysis.get("overall_read") or "").strip(),
         "color_note": str(analysis.get("color_note") or "").strip(),
         "formality_note": str(analysis.get("formality_note") or "").strip(),
         "proportion_note": proportion or None,
         "garment_notes": notes,
+        "verdict_phrase": str(analysis.get("verdict_phrase") or "").strip(),
+        "verdict_subtitle": str(analysis.get("verdict_subtitle") or "").strip(),
+        "focal_point": str(analysis.get("focal_point") or "").strip() or None,
+        "quick_reads": quick_reads[:4],
     }
 
 
@@ -263,6 +290,48 @@ def _render_markdown(results: List[Dict[str, Any]], settings) -> str:
         lines.append(note)
         lines.append("")
 
+        feedback = r.get("feedback") or {}
+        meters = r.get("meters") or {}
+        palette = r.get("palette") or []
+
+        # --- §7.7 the glanceable read, first -- this is the thing being judged
+        lines.append(
+            "### “{0}”".format(feedback.get("verdict_phrase", "") or "(none)")
+        )
+        subtitle = feedback.get("verdict_subtitle")
+        if subtitle:
+            lines.append("*{0}*".format(subtitle))
+        lines.append("")
+
+        def _meter_line(name: str) -> str:
+            meter = meters.get(name)
+            if not meter:
+                return "{0}: n/a".format(name)
+            return "{0}: **{1}** ({2:.2f})".format(name, meter["level"], meter["score"])
+
+        lines.append(
+            "{0}  ·  {1}".format(
+                _meter_line("occasion_match"), _meter_line("signal_clarity")
+            )
+        )
+        lines.append("")
+
+        if palette:
+            lines.append(
+                "Palette: " + " ".join("`{0}`".format(c.get("hex")) for c in palette)
+            )
+        focal_point = feedback.get("focal_point")
+        if focal_point:
+            lines.append("Focal point: {0}".format(focal_point))
+        lines.append("")
+
+        quick_reads = feedback.get("quick_reads") or []
+        if quick_reads:
+            lines.append("**Quick reads:**")
+            for qr in quick_reads:
+                lines.append("- _{0}_: {1}".format(qr.get("dimension", "?"), qr.get("text", "")))
+            lines.append("")
+
         garments = r.get("garments") or []
         if garments:
             lines.append("**Detected garments:**")
@@ -288,7 +357,8 @@ def _render_markdown(results: List[Dict[str, Any]], settings) -> str:
         )
         lines.append("")
 
-        feedback = r.get("feedback") or {}
+        lines.append("<details><summary>Full read</summary>")
+        lines.append("")
         lines.append("**Overall read:** {0}".format(feedback.get("overall_read", "")))
         lines.append("")
         lines.append("**Colour:** {0}".format(feedback.get("color_note", "")))
@@ -305,6 +375,8 @@ def _render_markdown(results: List[Dict[str, Any]], settings) -> str:
                 label = gn.get("garment", gn.get("garment_id", "?"))
                 lines.append("- {0}: {1}".format(label, gn.get("note", "")))
             lines.append("")
+        lines.append("</details>")
+        lines.append("")
 
         lines.append("---")
         lines.append("")

@@ -8,7 +8,7 @@ which is the §2.3 promise that competitors' re-scan drift breaks.
 Pure stdlib maths + Pillow. No numpy, no scikit-learn.
 """
 import math
-from typing import Dict, List, Optional, Sequence, Tuple
+from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 from PIL import Image
 
@@ -156,6 +156,59 @@ def dominant_colours(
     top = merged[:max_colours]
     for entry in top:
         entry["weight"] = round(float(entry["weight"]), 4)
+    return top
+
+
+def garment_palette(
+    garments: Sequence[Dict[str, Any]], max_colours: int = 5
+) -> List[Dict[str, object]]:
+    """Aggregate the outfit's displayed palette from garment colours only.
+
+    §7.8: "Garment palette only. The palette strip shows garment colors
+    only. Filter out environment/background colors (walls, floor)... they
+    are meaningless to the user." Each garment's own colours (already
+    pixel-measured within its bbox by :func:`dominant_colours`) are pooled,
+    weighted by that garment's bbox area so a coat outweighs a belt, then
+    merged with the same perceptual threshold ``dominant_colours`` uses
+    within one garment, so a navy jacket and navy trousers collapse into one
+    swatch instead of two near-identical ones.
+    """
+    pooled: List[Tuple[float, Tuple[float, float, float], str]] = []
+    for garment in garments:
+        bbox = garment.get("bbox") or {}
+        area = max(0.0, float(bbox.get("w", 0.0) or 0.0)) * max(
+            0.0, float(bbox.get("h", 0.0) or 0.0)
+        )
+        area = area or 0.01  # an unusable bbox still counts a little, not zero
+        for colour in garment.get("colors") or []:
+            lab = colour.get("lab")
+            hex_value = colour.get("hex")
+            weight = colour.get("weight")
+            if not lab or not hex_value or weight is None:
+                continue
+            try:
+                pooled.append((float(weight) * area, tuple(float(v) for v in lab), str(hex_value)))
+            except (TypeError, ValueError):
+                continue
+
+    if not pooled:
+        return []
+
+    pooled.sort(key=lambda item: item[0], reverse=True)
+    merged: List[Dict[str, object]] = []
+    for weight, lab, hex_value in pooled:
+        for entry in merged:
+            if delta_e76(lab, entry["lab"]) < 12.0:
+                entry["weight"] = float(entry["weight"]) + weight
+                break
+        else:
+            merged.append({"hex": hex_value, "lab": list(lab), "weight": weight})
+
+    merged.sort(key=lambda entry: float(entry["weight"]), reverse=True)
+    top = merged[:max_colours]
+    total = sum(float(entry["weight"]) for entry in top) or 1.0
+    for entry in top:
+        entry["weight"] = round(float(entry["weight"]) / total, 4)
     return top
 
 

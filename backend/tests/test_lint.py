@@ -8,11 +8,13 @@ has to actually catch both.
 import pytest
 
 from app.worker.lint import (
+    RULE_MULTI_SENTENCE,
     RULE_NEGATIVE_ABSOLUTE,
     RULE_NUMERIC_SCORE,
     RULE_PERSON_EVALUATION,
     RULE_PRESCRIPTION,
     RULE_PROPORTION_HEDGE,
+    RULE_WORD_LIMIT,
     lint_feedback,
     lint_text,
 )
@@ -178,6 +180,115 @@ def test_real_proportion_observation_passes():
         {"proportion_note": "The cropped jacket raises the waistline visually."}
     )
     assert report.ok
+
+
+# --- §7.7 glanceable fields: word limits and single-sentence rule ---------
+def test_verdict_phrase_over_five_words_is_rejected():
+    report = lint_feedback({"verdict_phrase": "This reads as a very relaxed weekend look"})
+    assert not report.ok
+    assert RULE_WORD_LIMIT in report.rules_broken
+    assert report.violations[0].field == "verdict_phrase"
+
+
+def test_verdict_phrase_at_five_words_passes():
+    report = lint_feedback({"verdict_phrase": "Quiet, tidy weekend look overall"})
+    assert report.ok
+
+
+def test_verdict_subtitle_over_eight_words_is_rejected():
+    report = lint_feedback(
+        {"verdict_subtitle": "The pieces here all agree with each other closely and consistently"}
+    )
+    assert not report.ok
+    assert RULE_WORD_LIMIT in report.rules_broken
+
+
+def test_focal_point_over_twelve_words_is_rejected():
+    report = lint_feedback(
+        {
+            "focal_point": (
+                "The eye lands somewhere around the middle of the outfit near "
+                "the waistline where the belt sits"
+            )
+        }
+    )
+    assert not report.ok
+    assert RULE_WORD_LIMIT in report.rules_broken
+
+
+def test_quick_read_over_fifteen_words_is_rejected():
+    report = lint_feedback(
+        {
+            "quick_reads": [
+                {
+                    "dimension": "colour",
+                    "text": (
+                        "The navy and warm brown sit in a low-contrast range "
+                        "that reads as one continuous block rather than separate pieces"
+                    ),
+                }
+            ]
+        }
+    )
+    assert not report.ok
+    assert RULE_WORD_LIMIT in report.rules_broken
+    assert report.violations[0].field == "quick_reads[0]"
+
+
+def test_quick_read_at_fifteen_words_passes():
+    report = lint_feedback(
+        {
+            "quick_reads": [
+                {
+                    "dimension": "formality",
+                    "text": "The sneakers read a step more casual than the tailoring worn above them right now",
+                }
+            ]
+        }
+    )
+    # 15 words exactly — must pass the word-limit check (may still fail on
+    # other rules, but not this one).
+    assert RULE_WORD_LIMIT not in report.rules_broken
+
+
+def test_quick_read_with_two_sentences_is_rejected():
+    report = lint_feedback(
+        {
+            "quick_reads": [
+                {
+                    "dimension": "proportion",
+                    "text": "The jacket is long. It lengthens the line.",
+                }
+            ]
+        }
+    )
+    assert not report.ok
+    assert RULE_MULTI_SENTENCE in report.rules_broken
+
+
+def test_quick_read_single_sentence_passes():
+    report = lint_feedback(
+        {
+            "quick_reads": [
+                {"dimension": "colour", "text": "The palette stays warm and low-contrast throughout."}
+            ]
+        }
+    )
+    assert RULE_MULTI_SENTENCE not in report.rules_broken
+
+
+def test_quick_read_inherits_general_voice_rules():
+    """A prescriptive phrase inside a quick_read must still be caught."""
+    report = lint_feedback(
+        {"quick_reads": [{"dimension": "fit", "text": "You should swap the shoes."}]}
+    )
+    assert not report.ok
+    assert RULE_PRESCRIPTION in report.rules_broken
+
+
+def test_verdict_phrase_inherits_general_voice_rules():
+    report = lint_feedback({"verdict_phrase": "Looks bad today"})
+    assert RULE_NEGATIVE_ABSOLUTE in report.rules_broken
 
 
 def test_correction_prompt_names_the_offending_phrase():

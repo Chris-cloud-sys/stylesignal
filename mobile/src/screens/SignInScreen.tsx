@@ -15,9 +15,10 @@ import { colors, space, type } from '../theme';
 
 interface Props {
   onSignedIn: () => void;
+  onForgotPassword: () => void;
 }
 
-export function SignInScreen({ onSignedIn }: Props): React.ReactElement {
+export function SignInScreen({ onSignedIn, onForgotPassword }: Props): React.ReactElement {
   const [mode, setMode] = useState<'signIn' | 'create'>('signIn');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -105,12 +106,16 @@ export function SignInScreen({ onSignedIn }: Props): React.ReactElement {
           style={styles.submit}
         />
 
+        {!creating ? (
+          <Button variant="quiet" label="Forgot password?" onPress={onForgotPassword} />
+        ) : null}
+
         <Button
           variant="quiet"
           label={
             creating
               ? 'I already have an account'
-              : 'Create an account — 5 free scans a month'
+              : 'Create an account — 10 free scans a month'
           }
           onPress={() => {
             setMode(creating ? 'signIn' : 'create');

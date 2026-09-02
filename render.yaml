@@ -5,7 +5,7 @@
 # instructions for exactly what goes in each one.
 databases:
   - name: stylesignal-db
-    plan: starter
+    plan: basic-256mb
     databaseName: stylesignal
     user: stylesignal
 

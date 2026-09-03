@@ -744,3 +744,38 @@ enough" threshold), so the new column was added with a direct, additive
 DEFAULT 'worn'` against the live database before deploying the code that
 reads it — safe (nullable-equivalent via server default, no rewrite, no
 data loss) but manual, since this project has no Alembic yet.
+
+---
+
+## 24. Stale-processing reaper — an inprocess-queue job orphaned by a deploy
+
+A real production incident, not a hypothetical: a device test (an "item,
+not worn" scan — feature #2) got stuck at `status=processing` forever and
+the client's poll eventually surfaced as a 502. Root cause: the inprocess
+queue (§4.2) isn't durable across a restart — a Render deploy landed while
+that job was mid-flight, and the process tearing down mid-job just erased
+it, with nothing left to ever mark the outfit `failed`. Not a bug in the
+item-mode feature itself; the same thing can happen to any scan if a deploy
+lands at the wrong moment, which will keep happening as long as this
+project ships iteratively on the inprocess queue.
+
+New `_reap_if_stale()` in `outfits.py`, checked on every `GET
+/v1/outfits/{id}` (§6.2): an outfit stuck at `pending`/`processing` past
+`STYLESIGNAL_STALE_PROCESSING_TIMEOUT_SECONDS` (default 480s — comfortably
+above the worst case of `vlm_timeout_seconds` × (1 + `vlm_max_lint_retries`)
+so a genuinely slow-but-alive scan is never mistaken for an orphaned one)
+gets marked `failed`/`internal_error` at read time, and its scan is
+refunded (§8) — an infrastructure failure isn't a used read, same fairness
+as the storage-failure refund in `create_outfit`.
+
+Caught a real portability bug building this: `Outfit.created_at` comes back
+timezone-aware from Postgres (production) but naive from SQLite (tests,
+despite the column being declared `timezone=True`) — subtracting the two
+datetime flavors raises `TypeError`. Normalise to aware UTC before the
+subtraction rather than let the dialect decide.
+
+**Not fixed here, flagged for later:** the actual durability gap (jobs
+vanishing on restart) is still open — `docs/deployment.md` already
+documents the real fix (`STYLESIGNAL_QUEUE_BACKEND=arq` + Redis, jobs
+durable across restarts). This reaper is a symptom backstop, not that fix;
+worth revisiting once deploys during active development stop being routine.

@@ -6,7 +6,7 @@ import base64
 import binascii
 import logging
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional, Tuple
 
 from fastapi import APIRouter, Depends, File, Form, Query, Response, UploadFile, status
@@ -340,6 +340,7 @@ def get_outfit(
     db: Session = Depends(get_db),
 ) -> OutfitDetail:
     outfit = _owned_outfit(db, outfit_id, user)
+    _reap_if_stale(db, outfit)
     detail = build_outfit_detail(outfit)
     if outfit.is_public:
         detail.like_count = _like_counts([outfit.id], db).get(outfit.id, 0)
@@ -484,6 +485,39 @@ def _owned_outfit(db: Session, outfit_id: uuid.UUID, user: User) -> Outfit:
     if outfit is None or outfit.deleted_at is not None or outfit.user_id != user.id:
         raise not_found("Outfit")
     return outfit
+
+
+def _reap_if_stale(db: Session, outfit: Outfit) -> None:
+    """Read-time backstop for an inprocess-queue job orphaned by a restart
+    or deploy — see `stale_processing_timeout_seconds` in config.py. Without
+    this, a client polling §6.2 would retry forever against a row nothing
+    is ever going to finish or fail on its own.
+    """
+    if outfit.status not in ("pending", "processing"):
+        return
+    # SQLite (tests) hands back a naive datetime despite the column being
+    # declared timezone=True; Postgres (production) hands back an aware
+    # one. Normalise rather than let the dialect difference decide.
+    created_at = outfit.created_at
+    if created_at.tzinfo is None:
+        created_at = created_at.replace(tzinfo=timezone.utc)
+    age = datetime.now(timezone.utc) - created_at
+    if age > timedelta(seconds=settings.stale_processing_timeout_seconds):
+        logger.warning(
+            "outfit %s reaped as stale after %.0fs stuck at %s",
+            outfit.id,
+            age.total_seconds(),
+            outfit.status,
+        )
+        outfit.status = "failed"
+        outfit.failure_reason = "internal_error"
+        db.commit()
+        db.refresh(outfit)
+        # The scan was charged at creation (§8); an orphaned job is an
+        # infrastructure failure, not a used read, so give it back — same
+        # fairness as the storage-failure refund in create_outfit above.
+        if outfit.user is not None:
+            refund_scan(db, outfit.user)
 
 
 def _thumb_url(storage, outfit: Outfit) -> Optional[str]:

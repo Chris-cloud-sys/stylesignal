@@ -306,6 +306,52 @@ def test_free_tier_allowance_is_enforced(auth_client):
     assert body["details"]["scans_used_this_month"] == 3
 
 
+# --- Stale-processing reaper (an inprocess-queue job orphaned by a restart) -
+def test_stale_processing_outfit_is_reaped_and_scan_refunded(auth_client):
+    from datetime import datetime, timedelta, timezone
+
+    from app.db import SessionLocal
+    from app.models import Outfit
+
+    outfit_id = upload(auth_client)["outfit_id"]
+    wait_for_terminal(auth_client, outfit_id)  # let it finish normally first
+
+    before = auth_client.get("/v1/auth/me").json()["quota"]["scans_remaining"]
+
+    # Simulate a job an inprocess-queue restart orphaned mid-flight: stuck
+    # at "processing" with no completion or failure ever recorded.
+    db = SessionLocal()
+    try:
+        row = db.get(Outfit, uuid.UUID(outfit_id))
+        row.status = "processing"
+        row.created_at = datetime.now(timezone.utc) - timedelta(seconds=1000)
+        db.commit()
+    finally:
+        db.close()
+
+    result = auth_client.get("/v1/outfits/{0}".format(outfit_id)).json()
+    assert result["status"] == "failed"
+    assert result["failure_reason"] == "internal_error"
+
+    after = auth_client.get("/v1/auth/me").json()["quota"]["scans_remaining"]
+    assert after == before + 1, "the orphaned job's scan should be refunded"
+
+
+def test_recently_processing_outfit_is_not_reaped():
+    """The reaper must not fire on a scan that's merely still working."""
+    from datetime import datetime, timezone
+
+    from app.routers.outfits import _reap_if_stale
+
+    class _FakeOutfit:
+        status = "processing"
+        created_at = datetime.now(timezone.utc)
+
+    fake = _FakeOutfit()
+    _reap_if_stale(None, fake)  # a real db session would only be touched on reap
+    assert fake.status == "processing"
+
+
 def test_image_hash_cache_reuses_a_prior_scan(auth_client):
     """§8: the same pixels in the same context must not pay for a second run."""
     identical = make_jpeg(800, 1200, colour=(31, 61, 91))

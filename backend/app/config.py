@@ -61,6 +61,14 @@ class Settings(BaseSettings):
     queue_backend: str = "inprocess"  # inprocess | arq
     redis_url: str = "redis://localhost:6379/0"
     inprocess_concurrency: int = 2
+    # The inprocess queue isn't durable across a restart/deploy (see
+    # docs/deployment.md) — a job running when the process is torn down
+    # just vanishes, leaving its outfit stuck at pending/processing
+    # forever with nothing to ever mark it failed. This is the read-time
+    # backstop: comfortably above the worst case of vlm_timeout_seconds x
+    # (1 + vlm_max_lint_retries) so a genuinely slow-but-alive scan is
+    # never mistaken for an orphaned one.
+    stale_processing_timeout_seconds: int = 480
 
     # --- Rate limiting (§8) ------------------------------------------------
     # inprocess under-counts across more than one gateway worker; point it at

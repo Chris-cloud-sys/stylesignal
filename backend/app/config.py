@@ -6,8 +6,9 @@ Postgres, no Redis and no S3 — see ``docs/deployment.md`` for the production
 swap.
 """
 from functools import lru_cache
-from typing import Optional
+from typing import Any, Optional
 
+from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -18,6 +19,24 @@ class Settings(BaseSettings):
         env_file_encoding="utf-8",
         extra="ignore",
     )
+
+    @model_validator(mode="before")
+    @classmethod
+    def _strip_string_values(cls, data: Any) -> Any:
+        """Defends against a real deploy bug: Render's environment-variable
+        UI silently left a trailing newline on a pasted `DATABASE_URL`,
+        which turned into a Postgres connection to database "stylesignal\n"
+        — a working-looking value that fails at connect time, not at
+        paste time. Every env-sourced string gets stripped the same way
+        rather than special-casing one field, since the same UI quirk can
+        hit any of them (a bucket name, an API key, ...).
+        """
+        if isinstance(data, dict):
+            return {
+                key: value.strip() if isinstance(value, str) else value
+                for key, value in data.items()
+            }
+        return data
 
     # --- Core ------------------------------------------------------------
     env: str = "dev"

@@ -699,3 +699,48 @@ store listing assets, and a `eas build --profile production` +
 `eas submit` once ready. Also logged in the `project-stylesignal` memory.
 Revisit `ShareCard.tsx` and `buildShareText` once a real listing URL
 exists — both are commented as "phase 1, brand-only" pending this.
+
+---
+
+## 23. "Read an item, not worn" (feature #2)
+
+Capture-time toggle, not auto-detection ("On me" / "An item, not worn" on
+`CaptureScreen.tsx`) — a mode inferred from pixels alone would misfire
+constantly and gives no clean way to legitimately skip signals that don't
+apply; an explicit toggle does both.
+
+New `outfits.capture_mode` column (`worn` default | `item`), threaded
+through create/presign/reread. Three things change when it's `item`:
+
+- **`_detection_failure_reason`** (pipeline.py) skips the `no_person` check
+  entirely — a store/online photo is *expected* to have nobody in it, and
+  that gate exists specifically to reject a worn-mode photo missing its
+  wearer (the flat-lay/no-person eval set tests exactly that case; this
+  doesn't touch it, only adds a bypass for the new mode). `no_garments_detected`
+  still applies — an item photo with nothing recognisable as clothing is
+  still nothing to read.
+- **`rules.build_signals`** zeroes `proportion.flags`/`waistline_y`/
+  `upper_to_lower_width_ratio` for item mode — every one of those flags is
+  body-relative ("raises the visual waistline") and either meaningless or
+  actively misleading without a body. `focal_category` and
+  `categories_present` stay: "the biggest garment in frame" and "what's
+  present" need no body either way, and `fallback.py`'s focal-point
+  fallback depends on `focal_category` surviving.
+- **`vlm.py`'s per-request user prompt** (not the system prompt — that's
+  explicitly documented as a stable, cross-request-cached prefix, so
+  nothing conditional goes there) gets an item-mode section: describe
+  piece(s) as objects ("this jacket"), never second-person wearer language
+  ("your jacket"), skip proportion/line commentary, keep colour/pattern/
+  formality/multi-piece coordination exactly as-is.
+
+`fallback.py` needed no changes — its templates were already third-person
+throughout, and the empty `proportion.flags` it now receives already makes
+`_proportion_note` return `None` via existing logic.
+
+**Live-DB note:** Render's Postgres already had real rows by the time this
+shipped (docs/deployment.md's "once real data exists, create_all is not
+enough" threshold), so the new column was added with a direct, additive
+`ALTER TABLE ... ADD COLUMN IF NOT EXISTS capture_mode VARCHAR(8) NOT NULL
+DEFAULT 'worn'` against the live database before deploying the code that
+reads it — safe (nullable-equivalent via server default, no rewrite, no
+data loss) but manual, since this project has no Alembic yet.

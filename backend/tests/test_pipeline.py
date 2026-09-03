@@ -93,6 +93,27 @@ def test_person_present_with_garments_is_not_a_failure():
     assert _detection_failure_reason(analysis, detected) is None
 
 
+# --- SPEC+ "read an item, not worn" (docs/spec-deviations.md) --------------
+def test_item_mode_does_not_fail_on_no_person():
+    """A store/online photo is expected to have nobody in it — that's the
+    whole point of this mode, not a reason to reject it."""
+    analysis = {"person_present": False}
+    detected = [{"category": "top"}, {"category": "bottom"}]
+    assert _detection_failure_reason(analysis, detected, "item") is None
+
+
+def test_item_mode_still_fails_with_no_garments_at_all():
+    analysis = {"person_present": False}
+    assert _detection_failure_reason(analysis, [], "item") == "no_garments_detected"
+
+
+def test_worn_mode_is_unaffected_by_the_new_parameter():
+    """Explicit "worn" behaves exactly as the default did before."""
+    analysis = {"person_present": False}
+    detected = [{"category": "top"}]
+    assert _detection_failure_reason(analysis, detected, "worn") == "no_person"
+
+
 # --- §4.7 rule signals -----------------------------------------------------
 def _garments():
     return [
@@ -162,6 +183,30 @@ def test_proportion_flags_come_from_geometry():
     assert "cropped_upper_raises_waistline" in proportion["flags"]
     assert "narrow_lower_silhouette" in proportion["flags"]
     assert proportion["upper_to_lower_width_ratio"] > 1.35
+
+
+def test_item_mode_suppresses_body_relative_proportion_flags():
+    """Same garments, same geometry as the worn-mode test above — every
+    waistline/silhouette flag is body-relative and must disappear, but
+    focal_category ("biggest garment in frame") needs no body and stays."""
+    garments = [
+        {
+            "category": "top",
+            "bbox": {"x": 0.3, "y": 0.1, "w": 0.4, "h": 0.28},
+            "formality": 0.5,
+        },
+        {
+            "category": "bottom",
+            "bbox": {"x": 0.35, "y": 0.38, "w": 0.18, "h": 0.5},
+            "formality": 0.5,
+        },
+    ]
+    proportion = build_signals(garments, [], None, "item")["proportion"]
+    assert proportion["flags"] == []
+    assert proportion["waistline_y"] is None
+    assert proportion["upper_to_lower_width_ratio"] is None
+    assert proportion["focal_category"] in ("top", "bottom")
+    assert proportion["categories_present"] == ["bottom", "top"]
 
 
 def test_garments_without_boxes_produce_no_flags():

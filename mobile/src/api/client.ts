@@ -212,6 +212,7 @@ export async function uploadOutfit(params: {
   uri: string;
   occasion?: string | null;
   contextNote?: string | null;
+  captureMode?: string;
   isPublic?: boolean;
 }): Promise<{ outfit_id: string; status: string }> {
   const form = new FormData();
@@ -224,6 +225,7 @@ export async function uploadOutfit(params: {
 
   if (params.occasion) form.append('occasion', params.occasion);
   if (params.contextNote) form.append('context_note', params.contextNote);
+  if (params.captureMode) form.append('capture_mode', params.captureMode);
   form.append('is_public', params.isPublic ? 'true' : 'false');
 
   // Do not set Content-Type — the runtime adds the multipart boundary.

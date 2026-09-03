@@ -148,6 +148,7 @@ def _run_stages(db: Session, outfit: Outfit, timings: Dict[str, float]) -> None:
             measured_palette=outfit_palette,
             occasion=outfit.occasion,
             context_note=outfit.context_note,
+            capture_mode=outfit.capture_mode,
             rule_signals=None,
             effort="low" if degraded else None,
             max_lint_retries=1 if degraded else None,
@@ -171,7 +172,7 @@ def _run_stages(db: Session, outfit: Outfit, timings: Dict[str, float]) -> None:
     timings["vlm"] = round(time.monotonic() - mark, 3)
 
     detected = _normalise_garments(analysis)
-    failure_reason = _detection_failure_reason(analysis, detected)
+    failure_reason = _detection_failure_reason(analysis, detected, outfit.capture_mode)
     if failure_reason is not None:
         raise _PipelineFailure(failure_reason)
     # When detection never ran (no VLM), we fall through with zero garments.
@@ -195,7 +196,9 @@ def _run_stages(db: Session, outfit: Outfit, timings: Dict[str, float]) -> None:
         if garment_dicts
         else outfit_palette
     )
-    signals = build_signals(garment_dicts, display_palette, outfit.occasion)
+    signals = build_signals(
+        garment_dicts, display_palette, outfit.occasion, outfit.capture_mode
+    )
     signals["vlm"] = vlm_meta
     signals["engine"] = settings.feedback_engine_version
 
@@ -288,7 +291,9 @@ def _normalise_garments(analysis: Optional[Dict[str, Any]]) -> List[Dict[str, An
 
 
 def _detection_failure_reason(
-    analysis: Optional[Dict[str, Any]], detected: List[Dict[str, Any]]
+    analysis: Optional[Dict[str, Any]],
+    detected: List[Dict[str, Any]],
+    capture_mode: str = "worn",
 ) -> Optional[str]:
     """§4.4: None if the scan should proceed, else the §5.3 failure reason.
 
@@ -299,10 +304,18 @@ def _detection_failure_reason(
     exactly the case the photo brief's flat-lay/no-person set exists to catch.
     Only once a person is confirmed present does an empty ``detected`` list
     become ``no_garments_detected``.
+
+    SPEC+ ("read an item, not worn" — docs/spec-deviations.md): that whole
+    rule is a deliberate choice for ``capture_mode == "worn"``. A store/
+    online photo of an unworn item is *expected* to have no person in it —
+    ``no_person`` would reject the exact case this mode exists to support,
+    so it's skipped entirely in ``"item"`` mode. ``no_garments_detected``
+    still applies either way; an item photo with nothing recognisable as
+    clothing is still nothing to read.
     """
     if analysis is None:
         return None
-    if not analysis.get("person_present"):
+    if capture_mode != "item" and not analysis.get("person_present"):
         return "no_person"
     if not detected:
         return "no_garments_detected"

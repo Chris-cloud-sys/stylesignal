@@ -34,6 +34,7 @@ from ..schemas import (
     PresignedUploadResponse,
     QuickReadOut,
     RereadRequest,
+    valid_capture_mode,
     valid_occasion,
 )
 from ..storage import get_storage
@@ -66,6 +67,7 @@ def create_outfit(
     image: UploadFile = File(...),
     occasion: Optional[str] = Form(default=None),
     context_note: Optional[str] = Form(default=None),
+    capture_mode: Optional[str] = Form(default=None),
     is_public: bool = Form(default=False),
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
@@ -76,6 +78,7 @@ def create_outfit(
 
     occasion_value = _parse_occasion(occasion)
     note_value = _parse_note(context_note)
+    capture_mode_value = _parse_capture_mode(capture_mode)
     data = _read_upload(image)
 
     # Charge the scan before doing any work, so a burst of parallel uploads
@@ -87,6 +90,7 @@ def create_outfit(
         status="pending",
         occasion=occasion_value,
         context_note=note_value,
+        capture_mode=capture_mode_value,
         is_public=is_public,
     )
     db.add(outfit)
@@ -121,6 +125,7 @@ def create_outfit(
 def presign_outfit(
     occasion: Optional[str] = Form(default=None),
     context_note: Optional[str] = Form(default=None),
+    capture_mode: Optional[str] = Form(default=None),
     is_public: bool = Form(default=False),
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
@@ -136,6 +141,7 @@ def presign_outfit(
         status="pending",
         occasion=_parse_occasion(occasion),
         context_note=_parse_note(context_note),
+        capture_mode=_parse_capture_mode(capture_mode),
         is_public=is_public,
     )
     db.add(outfit)
@@ -230,6 +236,9 @@ def reread_outfit(
         status="pending",
         occasion=occasion_value,
         context_note=source.context_note,
+        # Same photo, so the same capture mode — this isn't a fresh choice
+        # the way occasion/is_public are.
+        capture_mode=source.capture_mode,
         # Not carried over — re-sharing to the community feed is a fresh
         # decision each time, not implied by the original scan's setting.
         is_public=False,
@@ -359,6 +368,7 @@ def build_outfit_detail(outfit: Outfit) -> OutfitDetail:
         status=outfit.status,
         occasion=outfit.occasion,
         context_note=outfit.context_note,
+        capture_mode=outfit.capture_mode,
         is_public=outfit.is_public,
         thumb_url=_thumb_url(storage, outfit),
         created_at=outfit.created_at,
@@ -499,6 +509,13 @@ def _parse_occasion(value: Optional[str]) -> Optional[str]:
         return valid_occasion(value)
     except ValueError as exc:
         raise bad_request("invalid_occasion", str(exc))
+
+
+def _parse_capture_mode(value: Optional[str]) -> str:
+    try:
+        return valid_capture_mode(value)
+    except ValueError as exc:
+        raise bad_request("invalid_capture_mode", str(exc))
 
 
 def _parse_note(value: Optional[str]) -> Optional[str]:

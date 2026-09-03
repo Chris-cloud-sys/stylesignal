@@ -47,6 +47,11 @@ export type Occasion = (typeof OCCASIONS)[number];
 
 export const CONTEXT_NOTE_MAX_LENGTH = 280;
 
+/** SPEC+ — "read an item, not worn" (docs/spec-deviations.md). "worn" is
+ * the original single mode and stays the default. */
+export const CAPTURE_MODES = ['worn', 'item'] as const;
+export type CaptureMode = (typeof CAPTURE_MODES)[number];
+
 /**
  * Native IAP (SPEC+, docs/spec-deviations.md #18) — same product id on both
  * stores, matching the backend's `iap_product_id_ios`/`iap_product_id_android`

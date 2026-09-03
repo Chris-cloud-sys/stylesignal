@@ -47,6 +47,10 @@ FAILURE_REASONS = (
     "internal_error",
 )
 OCCASIONS = ("casual", "work", "formal", "evening", "athletic", "other")
+# SPEC+ — "read an item, not worn" (docs/spec-deviations.md). "worn" is the
+# original spec's only mode and stays the default; "item" is a store/online
+# photo of a garment on its own (hanger, mannequin, flat surface).
+CAPTURE_MODES = ("worn", "item")
 GARMENT_CATEGORIES = (
     "top",
     "bottom",
@@ -147,6 +151,9 @@ class Outfit(Base):
     failure_reason: Mapped[Optional[str]] = mapped_column(String(32), nullable=True)
     occasion: Mapped[Optional[str]] = mapped_column(String(16), nullable=True)
     context_note: Mapped[Optional[str]] = mapped_column(String(280), nullable=True)
+    capture_mode: Mapped[str] = mapped_column(
+        String(8), nullable=False, default="worn", server_default="worn"
+    )
     is_public: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False, index=True
     )

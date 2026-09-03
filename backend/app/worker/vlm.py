@@ -339,6 +339,7 @@ def analyse_outfit(
     measured_palette: List[Dict[str, Any]],
     occasion: Optional[str],
     context_note: Optional[str],
+    capture_mode: str = "worn",
     rule_signals: Optional[Dict[str, Any]] = None,
     effort: Optional[str] = None,
     max_lint_retries: Optional[int] = None,
@@ -374,7 +375,11 @@ def analyse_outfit(
                 {
                     "type": "text",
                     "text": _build_user_prompt(
-                        measured_palette, occasion, context_note, rule_signals
+                        measured_palette,
+                        occasion,
+                        context_note,
+                        rule_signals,
+                        capture_mode,
                     ),
                 },
             ],
@@ -494,9 +499,13 @@ def _build_user_prompt(
     occasion: Optional[str],
     context_note: Optional[str],
     rule_signals: Optional[Dict[str, Any]],
+    capture_mode: str = "worn",
 ) -> str:
+    item_mode = capture_mode == "item"
     lines = [
-        "Analyse the outfit in this photograph.",
+        "Analyse the item(s) in this photograph."
+        if item_mode
+        else "Analyse the outfit in this photograph.",
         "",
         "## Measured signals",
         "These were computed from the actual pixels and from geometry, not "
@@ -516,6 +525,28 @@ def _build_user_prompt(
             ]
         )
 
+    if item_mode:
+        lines.extend(
+            [
+                "",
+                "## Capture mode: item, not worn",
+                "This is a photo of a garment or garments on their own — a "
+                "store listing, an online product shot, a flat lay, a "
+                "hanger, a mannequin. Not a person wearing them. This is "
+                "expected: set person_present to whatever is actually true "
+                "(almost always false here) and do not treat its absence as "
+                "a problem. Describe the piece(s) as objects, not as worn: "
+                'write "this jacket" or "the two pieces", never "your '
+                'jacket" or second-person wearer language, and never claim '
+                "how it would drape, fit, or land on a body you cannot see. "
+                "Skip proportion and line commentary — waistline, hemline "
+                "and silhouette claims only make sense on a body — but "
+                "colour, pattern, formality and how multiple pieces "
+                "coordinate all still apply exactly as they do for a worn "
+                "photo.",
+            ]
+        )
+
     lines.extend(["", "## Context"])
     if occasion:
         lines.append(
@@ -530,10 +561,11 @@ def _build_user_prompt(
         )
 
     if context_note:
+        note_source = "They" if item_mode else "The wearer"
         lines.append(
-            'The wearer added: "{0}". Use it as context for what matters to '
-            "them; do not answer it as a question and do not give advice.".format(
-                context_note.replace('"', "'")
+            '{0} added: "{1}". Use it as context for what matters to them; '
+            "do not answer it as a question and do not give advice.".format(
+                note_source, context_note.replace('"', "'")
             )
         )
 

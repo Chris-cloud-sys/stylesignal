@@ -185,9 +185,10 @@ function Complete({
             // §7.8 "one verdict only" lives ON the photo — the read is the
             // headline, not a caption underneath it.
             <View style={styles.heroScrim}>
-              {outfit.occasion ? (
+              {outfit.occasion || outfit.capture_mode === 'item' ? (
                 <Text style={styles.heroOccasion}>
-                  Read for {sentenceCase(outfit.occasion)}
+                  {outfit.occasion ? `Read for ${sentenceCase(outfit.occasion)}` : 'Item read'}
+                  {outfit.capture_mode === 'item' ? ' · Not worn' : ''}
                 </Text>
               ) : null}
               <Text style={styles.heroVerdictPhrase}>{feedback.verdict_phrase}</Text>

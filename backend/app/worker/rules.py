@@ -55,11 +55,21 @@ def build_signals(
     garments: Sequence[Dict[str, Any]],
     outfit_palette: Sequence[Dict[str, Any]],
     occasion: str = None,
+    capture_mode: str = "worn",
 ) -> Dict[str, Any]:
     """Assemble the full internal signal bundle for one outfit."""
     harmony = classify_harmony(outfit_palette)
     formality = _formality_signals(garments)
     proportion = _proportion_flags(garments)
+    if capture_mode == "item":
+        # SPEC+ ("read an item, not worn" — docs/spec-deviations.md): every
+        # flag and phrase this produces is body-relative ("raises the
+        # visual waistline"), meaningless or actively misleading for an
+        # unworn item. `focal_category`/`categories_present` stay — "the
+        # biggest garment in frame" and "what's present" need no body.
+        proportion = dict(
+            proportion, flags=[], waistline_y=None, upper_to_lower_width_ratio=None
+        )
 
     return {
         "colour": dict(

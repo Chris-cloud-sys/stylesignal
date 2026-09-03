@@ -31,10 +31,12 @@ import { ApiError, uploadOutfit } from '../api/client';
 import type { Quota } from '../api/types';
 import { Button, Chip, HangerIcon, SectionLabel } from '../components/primitives';
 import {
+  CAPTURE_MODES,
   CONTEXT_NOTE_MAX_LENGTH,
   MAX_UPLOAD_LONGEST_EDGE,
   OCCASIONS,
   UPLOAD_JPEG_QUALITY,
+  type CaptureMode,
   type Occasion,
 } from '../config';
 import { colors, radius, sentenceCase, space, type, weight } from '../theme';
@@ -57,6 +59,7 @@ export function CaptureScreen({
   onSignOut,
 }: Props): React.ReactElement {
   const [imageUri, setImageUri] = useState<string | null>(null);
+  const [captureMode, setCaptureMode] = useState<CaptureMode>('worn');
   const [occasion, setOccasion] = useState<Occasion | null>(null);
   const [note, setNote] = useState('');
   const [isPublic, setIsPublic] = useState(false);
@@ -127,11 +130,13 @@ export function CaptureScreen({
         uri: imageUri,
         occasion,
         contextNote: note.trim() || null,
+        captureMode,
         isPublic,
       });
       setImageUri(null);
       setNote('');
       setOccasion(null);
+      setCaptureMode('worn');
       setIsPublic(false);
       onScanStarted(created.outfit_id);
     } catch (caught) {
@@ -189,6 +194,29 @@ export function CaptureScreen({
 
         {quota ? <QuotaLine quota={quota} onOpenUpgrade={onOpenUpgrade} /> : null}
 
+        {/* SPEC+ "read an item, not worn" (docs/spec-deviations.md) — a
+            capture-time toggle, not auto-detection: cleaner mental model,
+            and it lets the backend legitimately skip body-relative signals
+            (proportion, focal-point-on-body) instead of faking them. */}
+        <View style={styles.modeRow}>
+          {CAPTURE_MODES.map((mode) => {
+            const selected = captureMode === mode;
+            return (
+              <Pressable
+                key={mode}
+                onPress={() => setCaptureMode(mode)}
+                style={[styles.modeOption, selected && styles.modeOptionSelected]}
+                accessibilityRole="button"
+                accessibilityState={{ selected }}
+              >
+                <Text style={[styles.modeOptionLabel, selected && styles.modeOptionLabelSelected]}>
+                  {mode === 'worn' ? 'On me' : 'An item, not worn'}
+                </Text>
+              </Pressable>
+            );
+          })}
+        </View>
+
         <Pressable
           onPress={() => void pickFrom('library')}
           style={[
@@ -204,8 +232,14 @@ export function CaptureScreen({
           ) : (
             <View style={styles.previewEmpty}>
               <HangerIcon />
-              <Text style={styles.previewTitle}>Add a photo of the outfit</Text>
-              <Text style={styles.previewHint}>Full length works best.</Text>
+              <Text style={styles.previewTitle}>
+                {captureMode === 'worn' ? 'Add a photo of the outfit' : 'Add a photo of the item'}
+              </Text>
+              <Text style={styles.previewHint}>
+                {captureMode === 'worn'
+                  ? 'Full length works best.'
+                  : 'A clear, well-lit shot of the piece works best.'}
+              </Text>
             </View>
           )}
         </Pressable>
@@ -352,6 +386,26 @@ const styles = StyleSheet.create({
   },
   quotaPillStrong: { ...type.meta, color: colors.text, fontWeight: weight.medium },
   quotaPillMuted: { ...type.meta, color: colors.textMuted },
+
+  // §7.9-style selected state (filled Ink, Bone text) — the same treatment
+  // as occasion chips, since this is the same kind of "the user must see
+  // their choice" control, just binary and full-width.
+  modeRow: {
+    flexDirection: 'row',
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    overflow: 'hidden',
+    marginBottom: space.md,
+  },
+  modeOption: {
+    flex: 1,
+    paddingVertical: space.sm,
+    alignItems: 'center',
+  },
+  modeOptionSelected: { backgroundColor: colors.text },
+  modeOptionLabel: { ...type.meta, color: colors.textMuted, fontWeight: weight.medium },
+  modeOptionLabelSelected: { color: colors.background },
 
   preview: {
     aspectRatio: 3 / 4,

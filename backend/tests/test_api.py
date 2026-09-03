@@ -169,6 +169,40 @@ def test_invalid_occasion_is_rejected(auth_client):
     assert response.json()["error"]["code"] == "invalid_occasion"
 
 
+def test_capture_mode_defaults_to_worn(auth_client):
+    result = wait_for_terminal(auth_client, upload(auth_client)["outfit_id"])
+    assert result["capture_mode"] == "worn"
+
+
+def test_item_capture_mode_is_persisted(auth_client):
+    result = wait_for_terminal(
+        auth_client, upload(auth_client, capture_mode="item")["outfit_id"]
+    )
+    assert result["capture_mode"] == "item"
+
+
+def test_invalid_capture_mode_is_rejected(auth_client):
+    response = auth_client.post(
+        "/v1/outfits",
+        files={"image": ("o.jpg", make_jpeg(), "image/jpeg")},
+        data={"capture_mode": "on-a-cat"},
+    )
+    assert response.status_code == 400
+    assert response.json()["error"]["code"] == "invalid_capture_mode"
+
+
+def test_reread_inherits_the_source_outfits_capture_mode(auth_client):
+    source = upload(auth_client, occasion="work", capture_mode="item")
+    wait_for_terminal(auth_client, source["outfit_id"])
+
+    reread = auth_client.post(
+        "/v1/outfits/{0}/reread".format(source["outfit_id"]),
+        json={"occasion": "evening"},
+    ).json()
+    result = wait_for_terminal(auth_client, reread["outfit_id"])
+    assert result["capture_mode"] == "item"
+
+
 def test_non_image_upload_is_rejected(auth_client):
     response = auth_client.post(
         "/v1/outfits",

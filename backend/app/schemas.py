@@ -9,7 +9,7 @@ from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
-from .models import OCCASIONS, RATING_DIMENSIONS
+from .models import CAPTURE_MODES, OCCASIONS, RATING_DIMENSIONS
 
 
 # --- Auth ------------------------------------------------------------------
@@ -170,6 +170,7 @@ class OutfitDetail(BaseModel):
     failure_reason: Optional[str] = None
     occasion: Optional[str] = None
     context_note: Optional[str] = None
+    capture_mode: str = "worn"
     is_public: Optional[bool] = None
     thumb_url: Optional[str] = None
     created_at: Optional[datetime] = None
@@ -263,6 +264,16 @@ def valid_occasion(value: Optional[str]) -> Optional[str]:
     if value not in OCCASIONS:
         raise ValueError(
             "occasion must be one of {0}".format(", ".join(OCCASIONS))
+        )
+    return value
+
+
+def valid_capture_mode(value: Optional[str]) -> str:
+    if value is None or value == "":
+        return "worn"
+    if value not in CAPTURE_MODES:
+        raise ValueError(
+            "capture_mode must be one of {0}".format(", ".join(CAPTURE_MODES))
         )
     return value
 

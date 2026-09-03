@@ -79,6 +79,8 @@ export interface OutfitDetail {
   failure_reason?: FailureReason;
   occasion?: string | null;
   context_note?: string | null;
+  /** SPEC+ — "read an item, not worn" (docs/spec-deviations.md). */
+  capture_mode?: string;
   is_public?: boolean;
   thumb_url?: string | null;
   created_at?: string;

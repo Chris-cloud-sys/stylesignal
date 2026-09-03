@@ -117,7 +117,7 @@ export function CaptureScreen({
     }
   };
 
-  const submit = async (): Promise<void> => {
+  const doSubmit = async (): Promise<void> => {
     if (!imageUri) return;
     setBusy(true);
     setError(null);
@@ -144,6 +144,25 @@ export function CaptureScreen({
     } finally {
       setBusy(false);
     }
+  };
+
+  // §7.9-adjacent nudge: occasion is optional, but the read leans on it
+  // (occasion_match has nothing to compare against without one) — so a
+  // missing occasion gets a dismissible check, never a hard block.
+  const submit = (): void => {
+    if (!imageUri) return;
+    if (!occasion) {
+      Alert.alert(
+        'No occasion selected',
+        "StyleSignal's read is sharper with a bit of context. Submit without one?",
+        [
+          { text: 'Choose occasion', style: 'cancel' },
+          { text: 'Submit anyway', onPress: () => void doSubmit() },
+        ],
+      );
+      return;
+    }
+    void doSubmit();
   };
 
   return (

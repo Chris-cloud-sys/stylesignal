@@ -236,6 +236,23 @@ export function fetchOutfit(outfitId: string): Promise<OutfitDetail> {
   return request<OutfitDetail>(`/v1/outfits/${outfitId}`);
 }
 
+/** Result-screen "change occasion & re-read" — a real scan against the same
+ * photo, not a free cache hit (the backend explains why in reread_outfit's
+ * docstring). Returns the new outfit the same shape as uploadOutfit. */
+export function rereadOutfit(
+  outfitId: string,
+  occasion: string | null,
+): Promise<{ outfit_id: string; status: string }> {
+  return request<{ outfit_id: string; status: string }>(
+    `/v1/outfits/${outfitId}/reread`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ occasion }),
+    },
+  );
+}
+
 export function fetchHistory(cursor?: string | null): Promise<OutfitListResponse> {
   const query = cursor ? `?limit=20&cursor=${encodeURIComponent(cursor)}` : '?limit=20';
   return request<OutfitListResponse>(`/v1/outfits${query}`);

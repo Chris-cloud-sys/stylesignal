@@ -108,6 +108,10 @@ export default function App(): React.ReactElement {
           <ResultScreen
             outfitId={screen.outfitId}
             onDone={() => setScreen({ name: 'capture' })}
+            onReread={(newOutfitId) => {
+              setScreen({ name: 'result', outfitId: newOutfitId });
+              void refreshQuota();
+            }}
           />
         ) : null}
 

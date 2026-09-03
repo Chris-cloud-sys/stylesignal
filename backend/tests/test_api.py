@@ -298,6 +298,72 @@ def test_image_hash_cache_reuses_a_prior_scan(auth_client):
     )
 
 
+# --- Result-screen "change occasion & re-read" ------------------------------
+def test_reread_produces_a_new_outfit_under_a_different_occasion(auth_client):
+    source = upload(auth_client, occasion="work")
+    wait_for_terminal(auth_client, source["outfit_id"])
+
+    reread = auth_client.post(
+        "/v1/outfits/{0}/reread".format(source["outfit_id"]),
+        json={"occasion": "evening"},
+    )
+    assert reread.status_code == 202, reread.text
+    reread_body = reread.json()
+    assert reread_body["outfit_id"] != source["outfit_id"]
+
+    result = wait_for_terminal(auth_client, reread_body["outfit_id"])
+    assert result["status"] == "complete"
+    assert result["occasion"] == "evening"
+
+
+def test_reread_charges_the_free_tier_allowance(auth_client):
+    """Not a free cache hit — see reread_outfit's docstring for why."""
+    source = upload(auth_client, occasion="work")
+    wait_for_terminal(auth_client, source["outfit_id"])
+
+    before = auth_client.get("/v1/auth/me").json()["quota"]["scans_remaining"]
+    reread = auth_client.post(
+        "/v1/outfits/{0}/reread".format(source["outfit_id"]),
+        json={"occasion": "evening"},
+    )
+    assert reread.status_code == 202, reread.text
+    after = auth_client.get("/v1/auth/me").json()["quota"]["scans_remaining"]
+    assert after == before - 1
+
+
+def test_reread_requires_a_completed_source_outfit(auth_client):
+    pending = upload(auth_client, occasion="work")
+    # Don't wait for completion — reread while still pending.
+    reread = auth_client.post(
+        "/v1/outfits/{0}/reread".format(pending["outfit_id"]),
+        json={"occasion": "evening"},
+    )
+    assert reread.status_code == 400
+    assert reread.json()["error"]["code"] == "outfit_not_complete"
+    wait_for_terminal(auth_client, pending["outfit_id"])
+
+
+def test_reread_of_missing_outfit_is_404(auth_client):
+    reread = auth_client.post(
+        "/v1/outfits/{0}/reread".format(uuid.uuid4()),
+        json={"occasion": "evening"},
+    )
+    assert reread.status_code == 404
+
+
+def test_reread_does_not_inherit_is_public(auth_client):
+    """Re-sharing to the community feed is a fresh decision each time."""
+    source = upload(auth_client, occasion="work", is_public="true")
+    wait_for_terminal(auth_client, source["outfit_id"])
+
+    reread = auth_client.post(
+        "/v1/outfits/{0}/reread".format(source["outfit_id"]),
+        json={"occasion": "evening"},
+    ).json()
+    result = wait_for_terminal(auth_client, reread["outfit_id"])
+    assert result["is_public"] is False
+
+
 # --- §6.5 community loop ---------------------------------------------------
 def test_feed_excludes_your_own_outfits(client):
     author = client.post(

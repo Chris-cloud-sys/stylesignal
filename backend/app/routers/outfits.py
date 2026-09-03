@@ -33,6 +33,7 @@ from ..schemas import (
     OutfitListResponse,
     PresignedUploadResponse,
     QuickReadOut,
+    RereadRequest,
     valid_occasion,
 )
 from ..storage import get_storage
@@ -178,6 +179,79 @@ def submit_outfit(
     outfit.status = "pending"
     outfit.failure_reason = None
     db.commit()
+
+    get_queue().enqueue_outfit(outfit.id)
+    return OutfitCreateResponse(outfit_id=outfit.id, status=outfit.status)
+
+
+@router.post(
+    "/{outfit_id}/reread",
+    response_model=OutfitCreateResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+    summary="Re-read the same photo under a different occasion (result screen)",
+)
+def reread_outfit(
+    outfit_id: uuid.UUID,
+    payload: RereadRequest,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> OutfitCreateResponse:
+    """§7.9-adjacent: the result screen lets a user change the occasion tag
+    and get a fresh read of the *same* photo. This is a real scan, not a
+    free re-render — the image-hash cache (§8) is keyed on
+    ``(image_sha256, occasion)`` specifically so occasion-dependent notes
+    never leak across occasions, and v1's single-VLM-call architecture has
+    no way to cheaply redo only the occasion-dependent slice. So this
+    charges a scan exactly like ``create_outfit``, and creates a genuinely
+    new outfit row — the source photo's bytes are copied over rather than
+    re-uploaded, since the client already has nothing to re-send.
+    """
+    ratelimit.check(
+        "upload:{0}".format(user.id), UPLOAD_RATE_LIMIT, UPLOAD_RATE_WINDOW
+    )
+
+    source = _owned_outfit(db, outfit_id, user)
+    if source.status != "complete":
+        raise bad_request(
+            "outfit_not_complete", "Only a completed scan can be re-read."
+        )
+    if not source.image_sha256 or not get_storage().exists(source.original_key):
+        raise bad_request(
+            "original_missing",
+            "The original photo for this scan is no longer available.",
+        )
+
+    occasion_value = _parse_occasion(payload.occasion)
+
+    consume_scan(db, user)
+
+    outfit = Outfit(
+        user_id=user.id,
+        status="pending",
+        occasion=occasion_value,
+        context_note=source.context_note,
+        # Not carried over — re-sharing to the community feed is a fresh
+        # decision each time, not implied by the original scan's setting.
+        is_public=False,
+    )
+    db.add(outfit)
+    db.flush()
+    outfit.original_key = "outfits/{0}/original.jpg".format(outfit.id)
+
+    try:
+        original_bytes = get_storage().get(source.original_key)
+        get_storage().put(outfit.original_key, original_bytes, "image/jpeg")
+    except Exception:
+        db.rollback()
+        refund_scan(db, user)
+        raise APIError(
+            status.HTTP_503_SERVICE_UNAVAILABLE,
+            "storage_unavailable",
+            "Could not prepare the re-read. Please try again.",
+        )
+
+    db.commit()
+    db.refresh(outfit)
 
     get_queue().enqueue_outfit(outfit.id)
     return OutfitCreateResponse(outfit_id=outfit.id, status=outfit.status)

@@ -10,7 +10,7 @@ import React, { useRef, useState } from 'react';
 import { Image, ScrollView, Share, StyleSheet, Text, View } from 'react-native';
 import { captureRef } from 'react-native-view-shot';
 
-import { absoluteMediaUrl } from '../api/client';
+import { absoluteMediaUrl, ApiError, rereadOutfit } from '../api/client';
 import type {
   FailureReason,
   Feedback,
@@ -22,6 +22,7 @@ import type {
 import { useOutfitPolling } from '../api/useOutfitPolling';
 import {
   Button,
+  Chip,
   Disclosure,
   Divider,
   dimensionLabel,
@@ -34,6 +35,7 @@ import {
   Swatches,
 } from '../components/primitives';
 import { ShareCard } from '../components/ShareCard';
+import { OCCASIONS, type Occasion } from '../config';
 import { colors, radius, sentenceCase, space, type, weight } from '../theme';
 
 /** §7.7 meter labels — plain English, not the wire-format field name. */
@@ -45,6 +47,9 @@ const METER_LABELS: Record<'occasion_match' | 'signal_clarity', string> = {
 interface Props {
   outfitId: string;
   onDone: () => void;
+  /** Result-screen "change occasion & re-read" — hands the new outfit's id
+   * back up so the caller can navigate to its own result screen. */
+  onReread: (outfitId: string) => void;
 }
 
 /** §5.3 failure reasons, said plainly. Never blame the user. */
@@ -67,7 +72,7 @@ const FAILURE_COPY: Record<FailureReason, { title: string; body: string }> = {
   },
 };
 
-export function ResultScreen({ outfitId, onDone }: Props): React.ReactElement {
+export function ResultScreen({ outfitId, onDone, onReread }: Props): React.ReactElement {
   const { state, retry } = useOutfitPolling(outfitId);
 
   if (state.phase === 'error') {
@@ -101,7 +106,7 @@ export function ResultScreen({ outfitId, onDone }: Props): React.ReactElement {
     );
   }
 
-  return <Complete outfit={outfit} onDone={onDone} />;
+  return <Complete outfit={outfit} onDone={onDone} onReread={onReread} />;
 }
 
 // --- Pending (§4.1 skeleton) ----------------------------------------------
@@ -150,9 +155,11 @@ function Pending({
 function Complete({
   outfit,
   onDone,
+  onReread,
 }: {
   outfit: OutfitDetail;
   onDone: () => void;
+  onReread: (outfitId: string) => void;
 }): React.ReactElement {
   const feedback = outfit.feedback;
   const thumb = absoluteMediaUrl(outfit.thumb_url);
@@ -216,6 +223,17 @@ function Complete({
         />
       ) : null}
 
+      {feedback ? (
+        <>
+          <Divider />
+          <ChangeOccasion
+            outfitId={outfit.outfit_id}
+            currentOccasion={outfit.occasion ?? null}
+            onRead={onReread}
+          />
+        </>
+      ) : null}
+
       <Divider />
       <Text style={styles.footnote}>
         This describes how the outfit reads. What you do with it is yours.
@@ -235,6 +253,73 @@ function Complete({
         </View>
       ) : null}
     </ScrollView>
+  );
+}
+
+// --- Change occasion & re-read -----------------------------------------------
+// A real scan against the same photo, not a free cache hit — the backend's
+// image-hash cache is keyed on (image, occasion) specifically so an
+// occasion change never reuses another occasion's notes. See
+// reread_outfit's docstring in outfits.py.
+function ChangeOccasion({
+  outfitId,
+  currentOccasion,
+  onRead,
+}: {
+  outfitId: string;
+  currentOccasion: string | null;
+  onRead: (outfitId: string) => void;
+}): React.ReactElement {
+  const [selected, setSelected] = useState<Occasion | null>(currentOccasion as Occasion | null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const changed = selected !== currentOccasion;
+
+  const submit = async (): Promise<void> => {
+    if (!changed || busy) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const created = await rereadOutfit(outfitId, selected);
+      onRead(created.outfit_id);
+    } catch (caught) {
+      setError(
+        caught instanceof ApiError
+          ? caught.message
+          : 'Could not reach StyleSignal. Check your connection.',
+      );
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <View style={styles.rereadBlock}>
+      <SectionLabel>Different occasion?</SectionLabel>
+      <Text style={styles.rereadHint}>
+        Change the tag for a fresh read of this same photo — uses another scan.
+      </Text>
+      <View style={styles.chipWrap}>
+        {OCCASIONS.map((value) => (
+          <Chip
+            key={value}
+            label={sentenceCase(value)}
+            selected={selected === value}
+            onPress={() => setSelected(value)}
+          />
+        ))}
+      </View>
+      {error ? <Text style={styles.rereadError}>{error}</Text> : null}
+      <Button
+        variant="secondary"
+        label="Re-read with this occasion"
+        onPress={() => void submit()}
+        disabled={!changed}
+        busy={busy}
+        style={styles.rereadButton}
+      />
+    </View>
   );
 }
 
@@ -535,6 +620,12 @@ const styles = StyleSheet.create({
 
   shareButton: { marginBottom: space.md },
   offscreen: { position: 'absolute', top: 0, left: -2000 },
+
+  rereadBlock: { marginVertical: space.lg },
+  rereadHint: { ...type.meta, color: colors.textMuted, marginBottom: space.sm },
+  rereadError: { ...type.meta, color: colors.systemError, marginBottom: space.sm },
+  rereadButton: { marginTop: space.sm },
+  chipWrap: { flexDirection: 'row', flexWrap: 'wrap' },
 
   section: { marginBottom: space.lg },
   sectionBody: { ...type.body, color: colors.text },

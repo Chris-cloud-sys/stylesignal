@@ -85,6 +85,14 @@ class OutfitCreateResponse(BaseModel):
     status: str
 
 
+class RereadRequest(BaseModel):
+    """Re-read the same photo under a different occasion (result-screen
+    "change occasion" action). Costs a scan like any other read — see
+    outfits.py's reread_outfit for why this can't be a free cache hit."""
+
+    occasion: Optional[str] = None
+
+
 class PresignedUploadResponse(BaseModel):
     """§6.1 Flow B."""
 

@@ -176,6 +176,10 @@ class OutfitDetail(BaseModel):
     completed_at: Optional[datetime] = None
     garments: Optional[List[GarmentOut]] = None
     feedback: Optional[FeedbackOut] = None
+    # SPEC+ — likes/favorites (docs/spec-deviations.md). Only meaningful once
+    # public; omitted (not zeroed) for a private outfit so the client can
+    # tell "never shared" apart from "shared, zero likes so far".
+    like_count: Optional[int] = None
 
 
 class OutfitListItem(BaseModel):
@@ -184,6 +188,7 @@ class OutfitListItem(BaseModel):
     thumb_url: Optional[str] = None
     occasion: Optional[str] = None
     created_at: datetime
+    like_count: Optional[int] = None
 
 
 class OutfitListResponse(BaseModel):
@@ -198,11 +203,19 @@ class FeedItem(BaseModel):
     outfit_id: uuid.UUID
     thumb_url: Optional[str] = None
     occasion: Optional[str] = None
+    like_count: int = 0
+    liked_by_me: bool = False
 
 
 class FeedResponse(BaseModel):
     items: List[FeedItem]
     cursor: Optional[str] = None
+
+
+class LikeResponse(BaseModel):
+    outfit_id: uuid.UUID
+    liked: bool
+    like_count: int
 
 
 class RatingRequest(BaseModel):

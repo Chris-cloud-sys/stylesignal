@@ -649,3 +649,53 @@ list across the VLM schema, prompt, lint, and fallback. Chosen instead:
 render bars for *all* garments in the outfit, ordered by formality — no
 backend change, and for the typical 3-5 garment outfit this is very likely
 the same set the text is describing anyway.
+
+---
+
+## 22. New consumer-side features: occasion re-read, likes, "Try it now" phase 1
+
+From a critique-and-build-order discussion of four proposed features. Full
+critique isn't reproduced here — this is the implementation record.
+
+**Occasion nudge + change-occasion re-read.** `CaptureScreen.tsx` nudges
+(dismissible, never blocking) when submitting without an occasion tag,
+since `occasion_match` has nothing to compare against without one. The
+result screen's "change occasion & re-read" was initially proposed as a
+free cache hit; that was wrong and got corrected before building it — the
+image-hash cache (§8) is keyed on `(image_sha256, occasion)` specifically
+so occasion-dependent notes never leak across occasions, and v1's
+single-VLM-call architecture can't cheaply redo just the occasion slice.
+New `POST /v1/outfits/{id}/reread` charges a real scan, copies the
+original photo's bytes server-side (no client re-upload), and does not
+carry over `is_public` — re-sharing is a fresh decision each time.
+
+**Likes/favorites (no dislike).** New `Like` model, separate from `Rating`
+— ratings stay the structured 1-5 training signal (§5.6); a like is a
+lightweight favoriting action, explicitly not wired into the earn-by-rating
+loop (`app/quota.py`) so it can't be farmed one-tap-at-a-time the way a
+five-way rating call can't. `POST`/`DELETE /v1/outfits/{id}/likes`, both
+idempotent. The owner sees an aggregate `like_count` on their own outfit
+history/detail — never a list of who liked it, since there's no
+profile/follow system yet to make that meaningful. Mobile: heart glyph on
+`FeedScreen.tsx` cards renders **amber**, not red, when liked — §2.6's
+"amber is the accent, not a verdict colour" rule extends here even though
+a like isn't a verdict.
+
+**"Try it now" on shared results — phase 1 only.** The full feature (tap a
+shared image, land in the app store or straight into the app if already
+installed) needs a Universal/App Link, which needs a real published domain
+*and* the app actually being store-distributed — neither exists yet.
+Phase 1 ships now: a static "Get your own read — StyleSignal" line baked
+into `ShareCard.tsx`'s image (captions don't reliably survive WhatsApp/
+iMessage/email shares, so it has to be in the pixels) and the text-share
+fallback in `ResultScreen.tsx`. Deliberately brand-only, no domain or store
+link, since neither resolves to anything real yet.
+
+**Pinned to-do — Google Play listing.** Chris wants "Get StyleSignal" to
+eventually point at the Google Play listing (Apple App Store deferred —
+$99/yr recurring vs. Play's $25 one-time, and nothing built so far has
+touched iOS). Needs: a Google Play Developer account, a privacy policy URL,
+store listing assets, and a `eas build --profile production` +
+`eas submit` once ready. Also logged in the `project-stylesignal` memory.
+Revisit `ShareCard.tsx` and `buildShareText` once a real listing URL
+exists — both are commented as "phase 1, brand-only" pending this.

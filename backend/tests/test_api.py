@@ -450,6 +450,129 @@ def test_rating_value_is_bounded(auth_client):
     assert response.json()["error"]["code"] == "validation_error"
 
 
+# --- Likes/favorites (SPEC+, no dislike) ------------------------------------
+def test_liking_an_outfit_shows_up_in_the_feed_and_on_the_owners_view(client):
+    author = client.post(
+        "/v1/auth/register",
+        json={"email": "liked-{0}@x.com".format(uuid.uuid4().hex[:8]), "password": "a-long-password"},
+    ).json()
+    client.headers.update({"Authorization": "Bearer " + author["access_token"]})
+    public = client.post(
+        "/v1/outfits",
+        files={"image": ("p.jpg", make_jpeg(700, 1100, (30, 90, 30)), "image/jpeg")},
+        data={"is_public": "true"},
+    ).json()
+    wait_for_terminal(client, public["outfit_id"])
+
+    liker = client.post(
+        "/v1/auth/register",
+        json={"email": "liker-{0}@x.com".format(uuid.uuid4().hex[:8]), "password": "a-long-password"},
+    ).json()
+    client.headers.update({"Authorization": "Bearer " + liker["access_token"]})
+
+    feed_before = {
+        item["outfit_id"]: item for item in client.get("/v1/feed").json()["items"]
+    }
+    assert feed_before[public["outfit_id"]]["like_count"] == 0
+    assert feed_before[public["outfit_id"]]["liked_by_me"] is False
+
+    liked = client.post("/v1/outfits/{0}/likes".format(public["outfit_id"]))
+    assert liked.status_code == 201, liked.text
+    assert liked.json() == {
+        "outfit_id": public["outfit_id"],
+        "liked": True,
+        "like_count": 1,
+    }
+
+    # Liking again is idempotent — no duplicate, count stays 1.
+    again = client.post("/v1/outfits/{0}/likes".format(public["outfit_id"]))
+    assert again.status_code == 201
+    assert again.json()["like_count"] == 1
+
+    feed_after = {
+        item["outfit_id"]: item for item in client.get("/v1/feed").json()["items"]
+    }
+    assert feed_after[public["outfit_id"]]["like_count"] == 1
+    assert feed_after[public["outfit_id"]]["liked_by_me"] is True
+
+    # The owner sees the count on their own history and outfit detail —
+    # OutfitDetail only ever exposes an aggregate like_count, never a list
+    # of likers (no profile/follow system to make that meaningful yet).
+    client.headers.update({"Authorization": "Bearer " + author["access_token"]})
+    detail = client.get("/v1/outfits/{0}".format(public["outfit_id"])).json()
+    assert detail["like_count"] == 1
+
+    history = client.get("/v1/outfits").json()["items"]
+    own_row = next(item for item in history if item["outfit_id"] == public["outfit_id"])
+    assert own_row["like_count"] == 1
+
+
+def test_unlike_removes_the_like(client):
+    author = client.post(
+        "/v1/auth/register",
+        json={"email": "unlike-a-{0}@x.com".format(uuid.uuid4().hex[:8]), "password": "a-long-password"},
+    ).json()
+    client.headers.update({"Authorization": "Bearer " + author["access_token"]})
+    public = client.post(
+        "/v1/outfits",
+        files={"image": ("p.jpg", make_jpeg(700, 1100, (30, 30, 90)), "image/jpeg")},
+        data={"is_public": "true"},
+    ).json()
+    wait_for_terminal(client, public["outfit_id"])
+
+    liker = client.post(
+        "/v1/auth/register",
+        json={"email": "unlike-b-{0}@x.com".format(uuid.uuid4().hex[:8]), "password": "a-long-password"},
+    ).json()
+    client.headers.update({"Authorization": "Bearer " + liker["access_token"]})
+
+    client.post("/v1/outfits/{0}/likes".format(public["outfit_id"]))
+    unliked = client.delete("/v1/outfits/{0}/likes".format(public["outfit_id"]))
+    assert unliked.status_code == 200
+    assert unliked.json() == {
+        "outfit_id": public["outfit_id"],
+        "liked": False,
+        "like_count": 0,
+    }
+
+    # Unliking something never liked is a no-op, not an error.
+    again = client.delete("/v1/outfits/{0}/likes".format(public["outfit_id"]))
+    assert again.status_code == 200
+    assert again.json()["like_count"] == 0
+
+
+def test_cannot_like_your_own_outfit(auth_client):
+    public = auth_client.post(
+        "/v1/outfits",
+        files={"image": ("p.jpg", make_jpeg(), "image/jpeg")},
+        data={"is_public": "true"},
+    ).json()
+    wait_for_terminal(auth_client, public["outfit_id"])
+
+    blocked = auth_client.post("/v1/outfits/{0}/likes".format(public["outfit_id"]))
+    assert blocked.status_code == 400
+    assert blocked.json()["error"]["code"] == "cannot_like_own_outfit"
+
+
+def test_cannot_like_a_private_outfit(client):
+    author = client.post(
+        "/v1/auth/register",
+        json={"email": "priv-like-{0}@x.com".format(uuid.uuid4().hex[:8]), "password": "a-long-password"},
+    ).json()
+    client.headers.update({"Authorization": "Bearer " + author["access_token"]})
+    private = upload(client)  # is_public defaults to False
+    wait_for_terminal(client, private["outfit_id"])
+
+    other = client.post(
+        "/v1/auth/register",
+        json={"email": "priv-like-b-{0}@x.com".format(uuid.uuid4().hex[:8]), "password": "a-long-password"},
+    ).json()
+    client.headers.update({"Authorization": "Bearer " + other["access_token"]})
+
+    blocked = client.post("/v1/outfits/{0}/likes".format(private["outfit_id"]))
+    assert blocked.status_code == 404
+
+
 # --- Media -----------------------------------------------------------------
 def test_thumbnail_requires_a_valid_signature(auth_client):
     outfit_id = upload(auth_client)["outfit_id"]

@@ -6,10 +6,10 @@ import base64
 import binascii
 import uuid
 from datetime import datetime, timezone
-from typing import Any, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 from fastapi import APIRouter, Depends, File, Form, Query, Response, UploadFile, status
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from .. import ratelimit
@@ -18,7 +18,7 @@ from ..db import get_db
 from ..deps import get_current_user
 from ..errors import APIError, bad_request, not_found
 from ..jobs import get_queue
-from ..models import Outfit, User
+from ..models import Like, Outfit, User
 from ..quota import consume_scan, refund_scan
 from ..schemas import (
     ColourOut,
@@ -285,6 +285,7 @@ def list_outfits(
     rows = rows[:limit]
 
     storage = get_storage()
+    like_counts = _like_counts([row.id for row in rows if row.is_public], db)
     items = [
         OutfitListItem(
             outfit_id=row.id,
@@ -292,6 +293,7 @@ def list_outfits(
             thumb_url=_thumb_url(storage, row),
             occasion=row.occasion,
             created_at=row.created_at,
+            like_count=like_counts.get(row.id) if row.is_public else None,
         )
         for row in rows
     ]
@@ -315,7 +317,10 @@ def get_outfit(
     db: Session = Depends(get_db),
 ) -> OutfitDetail:
     outfit = _owned_outfit(db, outfit_id, user)
-    return build_outfit_detail(outfit)
+    detail = build_outfit_detail(outfit)
+    if outfit.is_public:
+        detail.like_count = _like_counts([outfit.id], db).get(outfit.id, 0)
+    return detail
 
 
 # --- §6.4 delete -----------------------------------------------------------
@@ -434,6 +439,18 @@ def build_outfit_detail(outfit: Outfit) -> OutfitDetail:
             ),
         )
     return detail
+
+
+def _like_counts(outfit_ids: List[uuid.UUID], db: Session) -> Dict[uuid.UUID, int]:
+    """Batch like counts for a page of outfits — one query, not N+1."""
+    if not outfit_ids:
+        return {}
+    rows = db.execute(
+        select(Like.outfit_id, func.count(Like.id))
+        .where(Like.outfit_id.in_(outfit_ids))
+        .group_by(Like.outfit_id)
+    ).all()
+    return {outfit_id: count for outfit_id, count in rows}
 
 
 def _owned_outfit(db: Session, outfit_id: uuid.UUID, user: User) -> Outfit:

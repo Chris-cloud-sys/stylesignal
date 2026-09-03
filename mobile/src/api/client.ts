@@ -12,6 +12,7 @@ import type {
   ApiErrorBody,
   FeedResponse,
   IapPlatform,
+  LikeResponse,
   Me,
   OutfitDetail,
   OutfitListResponse,
@@ -278,6 +279,15 @@ export function rateOutfit(
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ dimension, value }),
   });
+}
+
+/** SPEC+ — likes/favorites, no dislike counterpart (docs/spec-deviations.md). */
+export function likeOutfit(outfitId: string): Promise<LikeResponse> {
+  return request<LikeResponse>(`/v1/outfits/${outfitId}/likes`, { method: 'POST' });
+}
+
+export function unlikeOutfit(outfitId: string): Promise<LikeResponse> {
+  return request<LikeResponse>(`/v1/outfits/${outfitId}/likes`, { method: 'DELETE' });
 }
 
 // --- Billing (SPEC+ — native IAP, docs/spec-deviations.md #18) -------------

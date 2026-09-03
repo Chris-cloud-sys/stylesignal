@@ -180,6 +180,9 @@ class Outfit(Base):
     ratings: Mapped[List["Rating"]] = relationship(
         back_populates="outfit", cascade="all, delete-orphan"
     )
+    likes: Mapped[List["Like"]] = relationship(
+        back_populates="outfit", cascade="all, delete-orphan"
+    )
 
     # --- §5.7 key layout is derivable from the id; only original_key is stored
     @property
@@ -327,6 +330,36 @@ class Rating(Base):
     )
 
     outfit: Mapped[Outfit] = relationship(back_populates="ratings")
+
+
+class Like(Base):
+    """SPEC+ — community feed likes/favorites, one per (outfit, liker).
+
+    Deliberately separate from Rating: ratings stay the structured 1-5
+    training signal (§5.6, §4.8's preference-model input); a like is a
+    lightweight favoriting/engagement action with no rating semantics and
+    no dislike counterpart. Not wired into the earn-by-rating loop
+    (app/quota.py) on purpose — crediting likes would make the free-scan
+    earn mechanic one-tap farmable in a way a five-way rating call is not.
+    """
+
+    __tablename__ = "likes"
+    __table_args__ = (
+        UniqueConstraint("outfit_id", "liker_id", name="uq_like_outfit_liker"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=_uuid)
+    outfit_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid, ForeignKey("outfits.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    liker_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=_utcnow
+    )
+
+    outfit: Mapped[Outfit] = relationship(back_populates="likes")
 
 
 class ModelVersion(Base):

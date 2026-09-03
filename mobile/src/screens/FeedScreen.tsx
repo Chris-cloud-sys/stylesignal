@@ -20,7 +20,7 @@ import {
   View,
 } from 'react-native';
 
-import { absoluteMediaUrl, fetchFeed, rateOutfit } from '../api/client';
+import { absoluteMediaUrl, fetchFeed, likeOutfit, rateOutfit, unlikeOutfit } from '../api/client';
 import type { FeedItem, RatingDimension } from '../api/types';
 import { Button } from '../components/primitives';
 import { colors, radius, sentenceCase, space, type, weight } from '../theme';
@@ -131,8 +131,35 @@ function FeedCard({
 }): React.ReactElement {
   const [values, setValues] = useState<Partial<Record<RatingDimension, number>>>({});
   const [submitting, setSubmitting] = useState(false);
+  const [liked, setLiked] = useState(item.liked_by_me);
+  const [likeCount, setLikeCount] = useState(item.like_count);
+  const [likeBusy, setLikeBusy] = useState(false);
   const thumb = absoluteMediaUrl(item.thumb_url);
   const hasAnyValue = Object.keys(values).length > 0;
+
+  // SPEC+ — likes/favorites, no dislike counterpart. Separate from the 1-5
+  // rating dimensions above: this is a lightweight favoriting action, not
+  // training signal, so it doesn't touch the earn-by-rating loop and
+  // doesn't drop the card from the feed the way submitting a rating does.
+  const toggleLike = async (): Promise<void> => {
+    if (likeBusy) return;
+    const wasLiked = liked;
+    setLikeBusy(true);
+    setLiked(!wasLiked);
+    setLikeCount((count) => count + (wasLiked ? -1 : 1));
+    try {
+      const response = wasLiked
+        ? await unlikeOutfit(item.outfit_id)
+        : await likeOutfit(item.outfit_id);
+      setLiked(response.liked);
+      setLikeCount(response.like_count);
+    } catch {
+      setLiked(wasLiked);
+      setLikeCount((count) => count + (wasLiked ? 1 : -1));
+    } finally {
+      setLikeBusy(false);
+    }
+  };
 
   const submit = async (): Promise<void> => {
     if (!hasAnyValue || submitting) return;
@@ -161,9 +188,24 @@ function FeedCard({
         <View style={[styles.cardImage, styles.cardImagePlaceholder]} />
       )}
 
-      {item.occasion ? (
-        <Text style={styles.cardOccasion}>{sentenceCase(item.occasion)}</Text>
-      ) : null}
+      <View style={styles.cardHead}>
+        {item.occasion ? (
+          <Text style={styles.cardOccasion}>{sentenceCase(item.occasion)}</Text>
+        ) : (
+          <View />
+        )}
+        <Pressable
+          onPress={() => void toggleLike()}
+          style={styles.likeButton}
+          accessibilityRole="button"
+          accessibilityLabel={liked ? 'Unlike this outfit' : 'Like this outfit'}
+        >
+          <Text style={[styles.likeGlyph, liked && styles.likeGlyphActive]}>
+            {liked ? '♥' : '♡'}
+          </Text>
+          <Text style={styles.likeCount}>{likeCount}</Text>
+        </Pressable>
+      </View>
 
       {DIMENSIONS.map((dimension) => (
         <RatingRow
@@ -278,7 +320,19 @@ const styles = StyleSheet.create({
     marginBottom: space.sm,
   },
   cardImagePlaceholder: { borderWidth: 1, borderColor: colors.border },
-  cardOccasion: { ...type.meta, color: colors.textMuted, marginBottom: space.md },
+  cardHead: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: space.md,
+  },
+  cardOccasion: { ...type.meta, color: colors.textMuted },
+  // §2.6: amber is the accent, never red — a liked heart stays on-brand
+  // rather than reaching for the conventional red fill.
+  likeButton: { flexDirection: 'row', alignItems: 'center', gap: space.xs, padding: space.xs },
+  likeGlyph: { fontSize: 18, color: colors.textMuted },
+  likeGlyphActive: { color: colors.accent },
+  likeCount: { ...type.meta, color: colors.textMuted },
   cardSubmit: { marginTop: space.sm },
 
   ratingRow: { marginBottom: space.md },

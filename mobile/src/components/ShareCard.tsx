@@ -81,6 +81,15 @@ export const ShareCard = React.forwardRef<View, Props>(function ShareCard(
             ))}
           </View>
         ) : null}
+
+        {/* "Try it now" phase 1 (docs/spec-deviations.md) — a static brand
+            call-to-action baked into the image itself, since WhatsApp/
+            iMessage/email don't reliably preserve caption text alongside a
+            shared photo. No domain/store link yet, so this stays brand-only
+            rather than printing a URL that doesn't resolve to anything;
+            upgrade to a real link or QR code once phase 2 has one to point
+            at. */}
+        <Text style={styles.cta}>Get your own read — StyleSignal</Text>
       </View>
     </View>
   );
@@ -142,4 +151,14 @@ const styles = StyleSheet.create({
   },
   meterBadgeLabel: { fontSize: 11, color: '#C9C2B4' },
   meterBadgeLevel: { fontSize: 11, fontWeight: '500', color: '#F4F0E9' },
+
+  // §2.6: amber is the accent — the one line on this card meant to prompt
+  // action gets it, same rule as the in-app primary CTA.
+  cta: {
+    fontSize: 12,
+    fontWeight: '500',
+    color: '#E0A32E',
+    letterSpacing: 0.2,
+    marginTop: 14,
+  },
 });

@@ -17,9 +17,15 @@ from ..config import get_settings
 from ..db import get_db
 from ..deps import get_current_user
 from ..errors import APIError, bad_request, not_found
-from ..models import Outfit, Rating, User
+from ..models import Like, Outfit, Rating, User
 from ..quota import credit_rating, quota_out
-from ..schemas import FeedItem, FeedResponse, RatingRequest, RatingResponse
+from ..schemas import (
+    FeedItem,
+    FeedResponse,
+    LikeResponse,
+    RatingRequest,
+    RatingResponse,
+)
 from ..storage import get_storage
 
 router = APIRouter(tags=["community"])
@@ -58,9 +64,29 @@ def get_feed(
     # ordering key for model uncertainty when §9 step 5 lands.
     already_rated = select(Rating.outfit_id).where(Rating.rater_id == user.id)
     rating_count = func.count(Rating.id)
+    # Correlated scalar subqueries rather than a second outerjoin — joining
+    # both Rating and Like to Outfit in one statement would fan out rows
+    # (an outfit with 3 ratings x 2 likes becomes 6 rows before GROUP BY),
+    # inflating both counts. Each subquery is independently correct and
+    # still functionally depends on Outfit.id, which is the GROUP BY key.
+    like_count_subq = (
+        select(func.count(Like.id))
+        .where(Like.outfit_id == Outfit.id)
+        .scalar_subquery()
+    )
+    liked_by_me_subq = (
+        select(func.count(Like.id))
+        .where(Like.outfit_id == Outfit.id, Like.liker_id == user.id)
+        .scalar_subquery()
+    )
 
     statement = (
-        select(Outfit, rating_count.label("rating_count"))
+        select(
+            Outfit,
+            rating_count.label("rating_count"),
+            like_count_subq.label("like_count"),
+            liked_by_me_subq.label("liked_by_me"),
+        )
         .outerjoin(Rating, Rating.outfit_id == Outfit.id)
         .where(
             Outfit.is_public.is_(True),
@@ -85,8 +111,10 @@ def get_feed(
             if outfit.image_sha256
             else None,
             occasion=outfit.occasion,
+            like_count=like_count,
+            liked_by_me=bool(liked_by_me),
         )
-        for outfit, _count in rows
+        for outfit, _rating_count, like_count, liked_by_me in rows
     ]
 
     offset = _decode_offset(cursor) + len(items)
@@ -161,6 +189,82 @@ def rate_outfit(
         scans_earned=earned,
         quota=quota_out(user),
     )
+
+
+@router.post(
+    "/v1/outfits/{outfit_id}/likes",
+    response_model=LikeResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Like a community outfit (SPEC+ — no dislike counterpart)",
+)
+def like_outfit(
+    outfit_id: uuid.UUID,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> LikeResponse:
+    _require_community_enabled()
+    ratelimit.check("like:{0}".format(user.id), limit=120, window_seconds=3600)
+
+    outfit = _likeable_outfit(db, outfit_id, user)
+
+    existing = db.execute(
+        select(Like).where(Like.outfit_id == outfit_id, Like.liker_id == user.id)
+    ).scalar_one_or_none()
+    if existing is None:
+        db.add(Like(outfit_id=outfit_id, liker_id=user.id))
+        db.commit()
+
+    return LikeResponse(
+        outfit_id=outfit_id, liked=True, like_count=_like_count(db, outfit.id)
+    )
+
+
+@router.delete(
+    "/v1/outfits/{outfit_id}/likes",
+    response_model=LikeResponse,
+    summary="Unlike a community outfit",
+)
+def unlike_outfit(
+    outfit_id: uuid.UUID,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> LikeResponse:
+    _require_community_enabled()
+
+    outfit = _likeable_outfit(db, outfit_id, user)
+
+    existing = db.execute(
+        select(Like).where(Like.outfit_id == outfit_id, Like.liker_id == user.id)
+    ).scalar_one_or_none()
+    if existing is not None:
+        db.delete(existing)
+        db.commit()
+
+    return LikeResponse(
+        outfit_id=outfit_id, liked=False, like_count=_like_count(db, outfit.id)
+    )
+
+
+def _likeable_outfit(db: Session, outfit_id: uuid.UUID, user: User) -> Outfit:
+    outfit = db.get(Outfit, outfit_id)
+    if (
+        outfit is None
+        or outfit.deleted_at is not None
+        or not outfit.is_public
+        or outfit.status != "complete"
+    ):
+        raise not_found("Outfit")
+    if outfit.user_id == user.id:
+        raise bad_request(
+            "cannot_like_own_outfit", "You cannot like your own outfit."
+        )
+    return outfit
+
+
+def _like_count(db: Session, outfit_id: uuid.UUID) -> int:
+    return db.execute(
+        select(func.count(Like.id)).where(Like.outfit_id == outfit_id)
+    ).scalar_one()
 
 
 def _decode_offset(cursor: Optional[str]) -> int:

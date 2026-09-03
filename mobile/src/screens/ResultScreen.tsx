@@ -340,7 +340,9 @@ function buildShareText(feedback: Feedback): string {
     }
   }
   lines.push('');
-  lines.push('— StyleSignal');
+  // "Try it now" phase 1 — same brand-only line as ShareCard's watermark,
+  // no domain/store link until phase 2 has one to point at.
+  lines.push('Get your own read — StyleSignal');
   return lines.join('\n');
 }
 

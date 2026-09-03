@@ -117,6 +117,9 @@ export function HistoryScreen({ onOpen, onBack }: Props): React.ReactElement {
               <Text style={styles.rowMeta}>
                 {new Date(item.created_at).toLocaleDateString()} ·{' '}
                 {statusWord(item.status)}
+                {typeof item.like_count === 'number'
+                  ? ` · ${item.like_count} ${item.like_count === 1 ? 'like' : 'likes'}`
+                  : ''}
               </Text>
             </View>
 

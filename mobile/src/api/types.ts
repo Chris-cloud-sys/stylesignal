@@ -85,6 +85,9 @@ export interface OutfitDetail {
   completed_at?: string | null;
   garments?: Garment[];
   feedback?: Feedback;
+  /** SPEC+ — likes/favorites. Present only once shared (see docs/spec-
+   * deviations.md); absent, not zero, means "never shared". */
+  like_count?: number | null;
 }
 
 export interface OutfitListItem {
@@ -93,6 +96,7 @@ export interface OutfitListItem {
   thumb_url?: string | null;
   occasion?: string | null;
   created_at: string;
+  like_count?: number | null;
 }
 
 export interface OutfitListResponse {
@@ -148,6 +152,14 @@ export interface FeedItem {
   outfit_id: string;
   thumb_url?: string | null;
   occasion?: string | null;
+  like_count: number;
+  liked_by_me: boolean;
+}
+
+export interface LikeResponse {
+  outfit_id: string;
+  liked: boolean;
+  like_count: number;
 }
 
 export interface FeedResponse {

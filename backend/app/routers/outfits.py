@@ -306,6 +306,8 @@ def list_outfits(
     rows = list(db.execute(statement).scalars())
     has_more = len(rows) > limit
     rows = rows[:limit]
+    for row in rows:
+        _reap_if_stale(db, row)
 
     storage = get_storage()
     like_counts = _like_counts([row.id for row in rows if row.is_public], db)

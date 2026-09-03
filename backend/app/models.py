@@ -154,6 +154,10 @@ class Outfit(Base):
     capture_mode: Mapped[str] = mapped_column(
         String(8), nullable=False, default="worn", server_default="worn"
     )
+    # TEMPORARY debug aid (remove once the item-mode internal_error bug is
+    # found) — the actual traceback for the most recent failure, queryable
+    # directly rather than fighting Render's log search.
+    debug_last_error: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     is_public: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False, index=True
     )

@@ -56,6 +56,17 @@ class Settings(BaseSettings):
     s3_endpoint_url: Optional[str] = None
     s3_sse: str = "AES256"
     signed_url_ttl_seconds: int = 3600
+    # boto3/botocore defaults (60s connect, 60s read, up to 5 legacy-mode
+    # retries on a retryable error) are generous enough that a transient R2
+    # hiccup can silently retry for minutes without ever raising — the same
+    # hidden-latency-multiplier shape as the Anthropic SDK's own default
+    # max_retries (see vlm.py). storage.get() is the first call the pipeline
+    # makes, before any VLM work starts, so this was a plausible unaccounted
+    # contributor to outfits observed stuck at "processing" for 600s+ with no
+    # exception ever recorded in debug_last_error.
+    s3_connect_timeout_seconds: float = 10.0
+    s3_read_timeout_seconds: float = 30.0
+    s3_max_attempts: int = 2
 
     # --- Job queue (§4.2) ------------------------------------------------
     queue_backend: str = "inprocess"  # inprocess | arq

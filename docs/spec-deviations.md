@@ -840,3 +840,54 @@ column) never caught this, because a real network-level hang never raises
 an exception — there's nothing for `except Exception` to catch. The
 signal that actually pointed here was the *absence* of a caught exception
 combined with real-world duration far exceeding the calculated worst case.
+
+---
+
+## 27. The rest of the real cause — worker OOM restarts and an unbounded S3 client
+
+Entry #26 was real but not sufficient — the user's own real photo (a
+floral dress on a hanger, item mode) still hung 749s on a retry
+afterward, and running that exact file straight through `analyse_outfit()`
+outside the API (bypassing storage and the worker entirely) completed in
+22s with no issue. That ruled the image itself back out and pointed
+at something specific to the deployed worker path.
+
+Two things, found together:
+
+- Render emailed that `stylesignal-worker` "exceeded its memory limit,
+  which triggered an automatic restart." `WorkerSettings.max_jobs` was 4,
+  and Arq runs concurrent jobs as threads inside one worker *process*
+  (`asyncio.to_thread`), not separate processes — so 4 concurrent jobs
+  meant 4 full image-decode-plus-VLM-payload working sets stacked on top
+  of one shared process baseline (FastAPI/SQLAlchemy/boto3/anthropic-SDK
+  imports, connection pools). On Render's `starter` plan that's enough to
+  exceed the instance's memory ceiling. A mid-job restart silently
+  orphans that job — same "no exception ever raised" shape as #26, which
+  is why `debug_last_error` stayed `None` here too, and why only the
+  read-time reaper (#24) ever caught it, at whatever multi-hundred-second
+  delay it happened to fire at. Fixed by dropping `max_jobs` to 1,
+  removing the concurrent-job memory multiplication entirely — cheap at
+  current (personal-testing) scan volume; revisit alongside an
+  instance-size upgrade if volume grows.
+- `S3Storage`'s boto3 client (`app/storage/s3.py`) was constructed with no
+  `Config` at all — botocore's own defaults (60s connect timeout, 60s read
+  timeout, legacy-mode retries) are the exact same hidden-latency-
+  multiplier shape as #26's Anthropic SDK finding, just in the storage
+  layer. `storage.get(outfit.original_key)` is the very first thing the
+  pipeline does, before any VLM work starts. Not confirmed as having
+  fired in the observed incidents, but left unbounded it's a second,
+  independent way for a transient R2 hiccup to silently eat minutes with
+  no exception raised — fixed preemptively alongside the `max_jobs` fix,
+  same reasoning as #26: bound every network call this pipeline makes, not
+  just the one already caught in the act. `s3_connect_timeout_seconds`
+  (10s), `s3_read_timeout_seconds` (30s), `s3_max_attempts` (2) added to
+  `config.py`.
+
+Diagnosis method worth noting: the thing that finally separated "image
+content" from "deployment environment" as the cause was reproducing with
+the user's *actual* photo file, directly through the pipeline code
+(bypassing the API), and having it succeed in 22s — a clean result that
+neither of entry #26's synthetic approximations nor any amount of
+log-reading had produced. Once the image was cleared, the Render platform
+email (not something we went looking for — it arrived mid-session) was
+the actual missing piece.

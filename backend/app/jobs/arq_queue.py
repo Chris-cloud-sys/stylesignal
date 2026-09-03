@@ -80,7 +80,19 @@ class WorkerSettings:
     functions = [process_outfit_job]
     on_startup = _startup
     redis_settings = _redis_settings()
-    max_jobs = 4
+    # Was 4. Arq runs concurrent jobs as threads inside one worker process
+    # (asyncio.to_thread), so N concurrent jobs means N full image-decode +
+    # VLM-payload working sets stacked on top of one shared process baseline.
+    # On Render's starter plan (small RAM ceiling) that's enough to exceed
+    # the instance's memory limit — confirmed by a Render "exceeded its
+    # memory limit, automatic restart" alert for stylesignal-worker. A
+    # restart mid-job silently orphans that job with no exception raised
+    # (matching debug_last_error staying None on every stuck-processing
+    # outfit), leaving only the read-time reaper to eventually catch it —
+    # which is why those outfits sat "processing" for minutes, not seconds.
+    # 1 removes the concurrent-job memory multiplication entirely; revisit
+    # only alongside an instance-size upgrade if scan volume needs it.
+    max_jobs = 1
     # Above the worst case of vlm_timeout_seconds x (1 + vlm_max_lint_retries)
     # (~360s) with margin — matches stale_processing_timeout_seconds so Arq
     # and the read-time reaper agree on what "too long" means.

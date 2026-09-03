@@ -19,6 +19,8 @@ class S3Storage(ObjectStorage):
                 "(pip install boto3)"
             ) from exc
 
+        from botocore.config import Config
+
         settings = get_settings()
         if not settings.s3_bucket:
             raise RuntimeError("STYLESIGNAL_S3_BUCKET must be set for the s3 backend")
@@ -26,10 +28,19 @@ class S3Storage(ObjectStorage):
         self.bucket = settings.s3_bucket
         self.sse = settings.s3_sse
         self.default_ttl = settings.signed_url_ttl_seconds
+        # Explicit timeouts/retries — botocore's own defaults (60s connect,
+        # 60s read, up to 5 retries) can silently turn one transient R2
+        # hiccup into minutes of hidden retrying with no exception raised.
+        # See the comment on the settings above for why this matters.
         self.client = boto3.client(
             "s3",
             region_name=settings.s3_region,
             endpoint_url=settings.s3_endpoint_url,
+            config=Config(
+                connect_timeout=settings.s3_connect_timeout_seconds,
+                read_timeout=settings.s3_read_timeout_seconds,
+                retries={"max_attempts": settings.s3_max_attempts, "mode": "standard"},
+            ),
         )
 
     def put(self, key: str, data: bytes, content_type: str) -> None:

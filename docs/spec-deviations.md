@@ -779,3 +779,36 @@ vanishing on restart) is still open — `docs/deployment.md` already
 documents the real fix (`STYLESIGNAL_QUEUE_BACKEND=arq` + Redis, jobs
 durable across restarts). This reaper is a symptom backstop, not that fix;
 worth revisiting once deploys during active development stop being routine.
+
+---
+
+## 25. Moved to the durable Arq/Redis job queue
+
+Real incidents forced this, not a proactive choice: entry #24's reaper was
+a symptom backstop, and by the time it shipped, four separate real device
+scans had already been orphaned by a restart mid-job — one from a Claude
+Code deploy, at least one from what the logs showed was Render's own
+infrastructure restarting the instance outside any deploy we triggered.
+The inprocess queue losing in-flight work on *any* restart, not just ours,
+made the reaper alone not enough.
+
+`app/jobs/arq_queue.py` was already fully built (this session's earlier
+`render.yaml` work just hadn't wired it up) — `ArqQueue.enqueue_outfit`,
+`process_outfit_job`, and `WorkerSettings` needed zero code changes beyond
+bumping `job_timeout` 300s -> 480s to match `stale_processing_timeout_seconds`
+(300s was under the worst-case VLM retry sequence of
+`vlm_timeout_seconds x (1 + vlm_max_lint_retries)` ~360s, so Arq could have
+killed a legitimately-still-working job).
+
+`render.yaml` now provisions three things together: a Render Redis
+instance, and a second `worker`-type service (`stylesignal-worker`,
+`arq app.jobs.arq_queue.WorkerSettings`) alongside the existing web
+service — the actual pipeline execution now happens in the worker, not
+inline in a web-service thread pool. The worker only needs the secrets the
+pipeline itself touches (DB, object storage, VLM key) — no JWT secret (it
+never issues/verifies tokens) and no Resend key (only the auth routes send
+email, and those stay in the web service).
+
+The read-time reaper (#24) stays — Arq's own `job_timeout` and retry
+handling cover the durability gap, but the reaper is still the backstop
+for whatever neither of those catches, and it costs nothing to keep.

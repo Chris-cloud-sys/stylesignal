@@ -10,12 +10,21 @@ databases:
     user: stylesignal
 
 services:
+  # Durable job queue (docs/deployment.md's "Arq on Redis" section) — the
+  # inprocess queue this replaces isn't durable across a restart/deploy,
+  # which orphaned several real scans (docs/spec-deviations.md #24) before
+  # this was set up.
+  - type: redis
+    name: stylesignal-redis
+    plan: starter
+    ipAllowList: []
+
   - type: web
     name: stylesignal-backend
     runtime: python
     plan: starter
     rootDir: backend
-    buildCommand: pip install -r requirements.txt "psycopg[binary]>=3.1" "boto3>=1.34"
+    buildCommand: pip install -r requirements.txt "psycopg[binary]>=3.1" "boto3>=1.34" "arq>=0.25" "redis>=5.0"
     startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
     healthCheckPath: /health
     envVars:
@@ -23,6 +32,14 @@ services:
         value: production
       - key: STYLESIGNAL_JWT_SECRET
         generateValue: true
+
+      - key: STYLESIGNAL_QUEUE_BACKEND
+        value: arq
+      - key: STYLESIGNAL_REDIS_URL
+        fromService:
+          type: redis
+          name: stylesignal-redis
+          property: connectionString
 
       # Postgres — Render's auto-generated connection string uses the
       # postgresql:// scheme (psycopg2's default); this app is built for
@@ -68,3 +85,48 @@ services:
         value: "50"
       - key: STYLESIGNAL_COMMUNITY_ENABLED
         value: "true"
+
+  # Arq worker — the actual pipeline execution now happens here, not in the
+  # web service. Only needs the secrets the pipeline itself touches: DB,
+  # object storage, and the VLM key. No JWT secret (doesn't issue/verify
+  # tokens) and no email/Resend key (only the auth routes send email, and
+  # those run in the web service, not here).
+  - type: worker
+    name: stylesignal-worker
+    runtime: python
+    plan: starter
+    rootDir: backend
+    buildCommand: pip install -r requirements.txt "psycopg[binary]>=3.1" "boto3>=1.34" "arq>=0.25" "redis>=5.0"
+    startCommand: arq app.jobs.arq_queue.WorkerSettings
+    envVars:
+      - key: STYLESIGNAL_ENV
+        value: production
+      - key: STYLESIGNAL_QUEUE_BACKEND
+        value: arq
+      - key: STYLESIGNAL_REDIS_URL
+        fromService:
+          type: redis
+          name: stylesignal-redis
+          property: connectionString
+
+      # Same values as stylesignal-backend's own — paste them again here.
+      - key: STYLESIGNAL_DATABASE_URL
+        sync: false
+      - key: STYLESIGNAL_STORAGE_BACKEND
+        value: s3
+      - key: STYLESIGNAL_S3_BUCKET
+        sync: false
+      - key: STYLESIGNAL_S3_REGION
+        value: auto
+      - key: STYLESIGNAL_S3_ENDPOINT_URL
+        sync: false
+      - key: STYLESIGNAL_S3_SSE
+        value: ""
+      - key: AWS_ACCESS_KEY_ID
+        sync: false
+      - key: AWS_SECRET_ACCESS_KEY
+        sync: false
+      - key: STYLESIGNAL_ANTHROPIC_API_KEY
+        sync: false
+      - key: STYLESIGNAL_VLM_MODEL
+        value: claude-opus-5

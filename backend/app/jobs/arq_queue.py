@@ -81,5 +81,8 @@ class WorkerSettings:
     on_startup = _startup
     redis_settings = _redis_settings()
     max_jobs = 4
-    job_timeout = 300
+    # Above the worst case of vlm_timeout_seconds x (1 + vlm_max_lint_retries)
+    # (~360s) with margin — matches stale_processing_timeout_seconds so Arq
+    # and the read-time reaper agree on what "too long" means.
+    job_timeout = 480
     keep_result = 60

@@ -17,7 +17,7 @@ import {
 } from 'react-native';
 
 import { ApiError, confirmPasswordReset, requestPasswordReset } from '../api/client';
-import { Button } from '../components/primitives';
+import { Button, PasswordField } from '../components/primitives';
 import { colors, space, type } from '../theme';
 
 interface Props {
@@ -117,14 +117,10 @@ export function ForgotPasswordScreen({ onDone }: Props): React.ReactElement {
               keyboardType="number-pad"
               maxLength={6}
             />
-            <TextInput
-              style={styles.input}
+            <PasswordField
               placeholder="New password (8 characters or more)"
-              placeholderTextColor={colors.textMuted}
               value={newPassword}
               onChangeText={setNewPassword}
-              secureTextEntry
-              autoCapitalize="none"
               autoComplete="new-password"
             />
             {error ? <Text style={styles.error}>{error}</Text> : null}

@@ -5,9 +5,10 @@
  * retry). Nothing on this screen colour-codes a verdict — §2.6 forbids it, and
  * the feedback is language, not a grade.
  */
+import { File, Paths } from 'expo-file-system';
 import * as Sharing from 'expo-sharing';
 import React, { useRef, useState } from 'react';
-import { Image, ScrollView, Share, StyleSheet, Text, View } from 'react-native';
+import { Image, Pressable, ScrollView, Share, StyleSheet, Text, View } from 'react-native';
 import { captureRef } from 'react-native-view-shot';
 
 import { absoluteMediaUrl, ApiError, rereadOutfit } from '../api/client';
@@ -178,6 +179,14 @@ function Complete({
 
   return (
     <ScrollView contentContainerStyle={styles.container}>
+      {/* A second way back besides the bottom "Scan another outfit" CTA —
+          not everyone wants to scroll the whole read to leave. */}
+      <View style={styles.topBar}>
+        <Pressable onPress={onDone} accessibilityRole="button">
+          <Text style={styles.topBarLink}>Home</Text>
+        </Pressable>
+      </View>
+
       {thumb ? (
         <View style={styles.hero}>
           <Image source={{ uri: thumb }} style={styles.heroImage} resizeMode="contain" />
@@ -363,8 +372,19 @@ async function shareFeedbackImage(
       shareFeedbackText(feedback);
       return;
     }
-    const uri = await captureRef(cardRef, { format: 'png', quality: 1 });
-    await Sharing.shareAsync(uri, { mimeType: 'image/png', dialogTitle: 'Share this read' });
+    // react-native-view-shot's own tmp directory isn't one expo-sharing's
+    // FileProvider config covers on Android — sharing straight from there
+    // throws a native FileProvider exception that crashes the app instead
+    // of rejecting the promise, so this try/catch never even sees it.
+    // Copying into expo-file-system's cache dir first keeps the file
+    // somewhere Sharing.shareAsync is actually configured to hand off.
+    const capturedUri = await captureRef(cardRef, { format: 'png', quality: 1 });
+    const shareableFile = new File(Paths.cache, `stylesignal-share-${Date.now()}.png`);
+    new File(capturedUri).copy(shareableFile);
+    await Sharing.shareAsync(shareableFile.uri, {
+      mimeType: 'image/png',
+      dialogTitle: 'Share this read',
+    });
   } catch {
     // Capture or the share sheet failed (or the user cancelled) — text still
     // gets the read across.
@@ -538,6 +558,8 @@ function Centered({
 
 const styles = StyleSheet.create({
   container: { padding: space.lg, paddingBottom: space.xxl },
+  topBar: { marginBottom: space.sm },
+  topBarLink: { ...type.meta, color: colors.textMuted },
   stage: { ...type.meta, color: colors.textMuted, marginBottom: space.md },
   // §7.8 the hero is a container for the photo AND the scrim-mounted
   // verdict, not the `<Image>` itself — that's what makes the overlay

@@ -4,6 +4,7 @@ The gateway stays thin (§3): validate, store, enqueue, read. No inference here.
 """
 import base64
 import binascii
+import logging
 import uuid
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Tuple
@@ -11,6 +12,8 @@ from typing import Any, Dict, List, Optional, Tuple
 from fastapi import APIRouter, Depends, File, Form, Query, Response, UploadFile, status
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
+
+logger = logging.getLogger("stylesignal.routers.outfits")
 
 from .. import ratelimit
 from ..config import get_settings
@@ -74,6 +77,17 @@ def create_outfit(
 ) -> OutfitCreateResponse:
     ratelimit.check(
         "upload:{0}".format(user.id), UPLOAD_RATE_LIMIT, UPLOAD_RATE_WINDOW
+    )
+
+    # TEMPORARY diagnostic (remove once the client-side is_public bug is
+    # found) — logs exactly what FastAPI parsed the form field as, so a
+    # real device test tells us client-vs-server without guessing.
+    logger.info(
+        "create_outfit user=%s is_public(parsed)=%r occasion=%r capture_mode=%r",
+        user.id,
+        is_public,
+        occasion,
+        capture_mode,
     )
 
     occasion_value = _parse_occasion(occasion)

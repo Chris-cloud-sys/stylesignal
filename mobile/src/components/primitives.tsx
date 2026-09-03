@@ -10,6 +10,7 @@ import {
   Pressable,
   StyleSheet,
   Text,
+  TextInput,
   View,
   ViewStyle,
 } from 'react-native';
@@ -65,6 +66,60 @@ export function Button({
       )}
     </Pressable>
   );
+}
+
+// --- Password field (show/hide) ---------------------------------------------
+interface PasswordFieldProps {
+  value: string;
+  onChangeText: (value: string) => void;
+  placeholder: string;
+  autoComplete?: 'new-password' | 'current-password' | 'off';
+  style?: ViewStyle;
+}
+
+export function PasswordField({
+  value,
+  onChangeText,
+  placeholder,
+  autoComplete,
+  style,
+}: PasswordFieldProps): React.ReactElement {
+  const [visible, setVisible] = useState(false);
+  return (
+    <View style={[styles.passwordField, style]}>
+      <TextInput
+        style={styles.passwordInput}
+        placeholder={placeholder}
+        placeholderTextColor={colors.textMuted}
+        value={value}
+        onChangeText={onChangeText}
+        secureTextEntry={!visible}
+        autoCapitalize="none"
+        autoComplete={autoComplete}
+      />
+      <Pressable
+        onPress={() => setVisible((current) => !current)}
+        style={styles.passwordToggle}
+        hitSlop={8}
+        accessibilityRole="button"
+        accessibilityLabel={visible ? 'Hide password' : 'Show password'}
+      >
+        {visible ? <EyeOpenGlyph /> : <EyeClosedGlyph />}
+      </Pressable>
+    </View>
+  );
+}
+
+function EyeOpenGlyph(): React.ReactElement {
+  return (
+    <View style={styles.pwEyeOuter}>
+      <View style={styles.pwEyePupil} />
+    </View>
+  );
+}
+
+function EyeClosedGlyph(): React.ReactElement {
+  return <View style={styles.pwEyeClosed} />;
 }
 
 // --- Chip (occasion select) ------------------------------------------------
@@ -340,6 +395,36 @@ export function HangerIcon(): React.ReactElement {
 }
 
 const styles = StyleSheet.create({
+  passwordField: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.md,
+    marginBottom: space.sm,
+    paddingRight: space.sm,
+  },
+  passwordInput: {
+    ...type.body,
+    color: colors.text,
+    flex: 1,
+    paddingHorizontal: space.md,
+    paddingVertical: space.md,
+  },
+  passwordToggle: { padding: space.xs },
+  pwEyeOuter: {
+    width: 20,
+    height: 13,
+    borderRadius: 10,
+    borderWidth: 1.5,
+    borderColor: colors.textMuted,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  pwEyePupil: { width: 6, height: 6, borderRadius: 3, backgroundColor: colors.textMuted },
+  pwEyeClosed: { width: 20, height: 1.5, borderRadius: 1, backgroundColor: colors.textMuted },
+
   button: {
     minHeight: 52,
     borderRadius: radius.md,

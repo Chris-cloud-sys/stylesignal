@@ -10,7 +10,7 @@ import {
 } from 'react-native';
 
 import { ApiError, login, register } from '../api/client';
-import { Button } from '../components/primitives';
+import { Button, PasswordField } from '../components/primitives';
 import { colors, space, type } from '../theme';
 
 interface Props {
@@ -85,14 +85,10 @@ export function SignInScreen({ onSignedIn, onForgotPassword }: Props): React.Rea
           autoComplete="email"
         />
 
-        <TextInput
-          style={styles.input}
+        <PasswordField
           placeholder={creating ? 'Password (8 characters or more)' : 'Password'}
-          placeholderTextColor={colors.textMuted}
           value={password}
           onChangeText={setPassword}
-          secureTextEntry
-          autoCapitalize="none"
           autoComplete={creating ? 'new-password' : 'current-password'}
         />
 

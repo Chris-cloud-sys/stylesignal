@@ -812,3 +812,31 @@ email, and those stay in the web service).
 The read-time reaper (#24) stays — Arq's own `job_timeout` and retry
 handling cover the durability gap, but the reaper is still the backstop
 for whatever neither of those catches, and it costs nothing to keep.
+
+---
+
+## 26. The real cause of the item-mode "hangs" — Anthropic SDK's hidden retries
+
+Root cause of the multi-minute stuck scans that entries #24/#25 kept
+cleaning up after, finally found: `vlm_timeout_seconds x max_attempts`
+(~360s worst case) only accounted for *our own* lint-and-regenerate loop.
+The `anthropic.Anthropic` client has its own internal retry-on-failure
+(`max_retries=2` by default) that was multiplying silently underneath
+every one of our attempts — one call to `client.messages.create` could
+itself be up to 3 real HTTP round-trips. Compounded with our own 3
+attempts, real worst case was well over 10 minutes, not the ~360s the
+reaper/`job_timeout` were sized against. This wasn't specific to item
+mode — it's a general VLM-call latency bug that item-mode's real device
+tests just happened to trigger a few times in a row.
+
+Fixed by setting `max_retries=0` on the client — we already have retry
+logic at the application level (the lint-and-regenerate loop), so the
+SDK's own hidden retries were pure redundancy, not resilience. One
+attempt in our loop is now genuinely one HTTP call, bounded cleanly by
+`vlm_timeout_seconds`.
+
+Diagnosis method worth noting: `debug_last_error` (entry #24's temporary
+column) never caught this, because a real network-level hang never raises
+an exception — there's nothing for `except Exception` to catch. The
+signal that actually pointed here was the *absence* of a caught exception
+combined with real-world duration far exceeding the calculated worst case.

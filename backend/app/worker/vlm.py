@@ -330,6 +330,14 @@ def _get_client():
         _client = anthropic.Anthropic(
             api_key=settings.anthropic_api_key,
             timeout=settings.vlm_timeout_seconds,
+            # The SDK's own internal retry-on-failure (default max_retries=2)
+            # was multiplying silently underneath our own lint-and-regenerate
+            # loop — each of *our* attempts could itself balloon into up to
+            # 3 real HTTP calls, pushing real-world worst case past 10
+            # minutes despite vlm_timeout_seconds x max_attempts suggesting
+            # ~360s. We already have our own retry logic at this level;
+            # zero out the SDK's so one of our attempts is one HTTP call.
+            max_retries=0,
         )
     return _client
 

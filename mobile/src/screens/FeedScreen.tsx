@@ -31,10 +31,41 @@ interface Props {
   onRated: () => void;
 }
 
-const DIMENSIONS: Array<{ key: RatingDimension; label: string; hint: string }> = [
-  { key: 'coherence', label: 'Coherence', hint: 'Does it hang together as one look?' },
-  { key: 'occasion_fit', label: 'Occasion fit', hint: "Right register for what it's tagged for?" },
-  { key: 'color', label: 'Colour', hint: 'Does the palette work?' },
+/** Plain-language phrasing per occasion, for the occasion_fit question below
+ * — "Does this look right for work?" reads clearer to a casual rater than
+ * "right register for what it's tagged for", which assumes vocabulary the
+ * app never explains anywhere else. */
+const OCCASION_PHRASES: Record<string, string> = {
+  casual: 'a casual day',
+  work: 'work',
+  formal: 'a formal event',
+  evening: 'an evening out',
+  athletic: 'workout or athletic wear',
+};
+
+const DIMENSIONS: Array<{
+  key: RatingDimension;
+  label: string;
+  hint: (occasion: string | null | undefined) => string;
+}> = [
+  {
+    key: 'coherence',
+    label: 'Coherence',
+    hint: () => 'Do the pieces look like they belong together?',
+  },
+  {
+    key: 'occasion_fit',
+    label: 'Occasion fit',
+    hint: (occasion) =>
+      `Does this look right for ${
+        (occasion && OCCASION_PHRASES[occasion]) || "the occasion it's tagged for"
+      }?`,
+  },
+  {
+    key: 'color',
+    label: 'Colour',
+    hint: () => 'Do the colors work well together?',
+  },
 ];
 
 export function FeedScreen({ onBack, onRated }: Props): React.ReactElement {
@@ -190,7 +221,7 @@ function FeedCard({
 
       <View style={styles.cardHead}>
         {item.occasion ? (
-          <Text style={styles.cardOccasion}>{sentenceCase(item.occasion)}</Text>
+          <Text style={styles.cardOccasion}>Occasion: {sentenceCase(item.occasion)}</Text>
         ) : (
           <View />
         )}
@@ -211,7 +242,7 @@ function FeedCard({
         <RatingRow
           key={dimension.key}
           label={dimension.label}
-          hint={dimension.hint}
+          hint={dimension.hint(item.occasion)}
           value={values[dimension.key]}
           onChange={(value) =>
             setValues((existing) => ({ ...existing, [dimension.key]: value }))

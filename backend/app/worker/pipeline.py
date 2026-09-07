@@ -16,7 +16,6 @@ Stage map (v1 collapses stages 2-4 into the single VLM call, per §9)::
 """
 import logging
 import time
-import traceback
 import uuid
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Tuple
@@ -78,7 +77,7 @@ def process_outfit(outfit_id: uuid.UUID) -> None:
         _fail(db, outfit_id, exc.reason)
     except Exception:
         logger.exception("outfit %s hit an unhandled error", outfit_id)
-        _fail(db, outfit_id, "internal_error", debug=traceback.format_exc())
+        _fail(db, outfit_id, "internal_error")
     finally:
         timings["total"] = round(time.monotonic() - started, 3)
         logger.info(
@@ -545,9 +544,7 @@ def _clear_previous_results(db: Session, outfit: Outfit) -> None:
     db.refresh(outfit)
 
 
-def _fail(
-    db: Session, outfit_id: uuid.UUID, reason: str, debug: Optional[str] = None
-) -> None:
+def _fail(db: Session, outfit_id: uuid.UUID, reason: str) -> None:
     try:
         db.rollback()
         outfit = db.get(Outfit, outfit_id)
@@ -556,8 +553,6 @@ def _fail(
         outfit.status = "failed"
         outfit.failure_reason = reason
         outfit.completed_at = datetime.now(timezone.utc)
-        if debug is not None:
-            outfit.debug_last_error = debug
         db.commit()
     except Exception:  # pragma: no cover - last resort
         logger.exception("could not record failure for outfit %s", outfit_id)

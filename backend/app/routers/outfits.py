@@ -79,17 +79,6 @@ def create_outfit(
         "upload:{0}".format(user.id), UPLOAD_RATE_LIMIT, UPLOAD_RATE_WINDOW
     )
 
-    # TEMPORARY diagnostic (remove once the client-side is_public bug is
-    # found) — logs exactly what FastAPI parsed the form field as, so a
-    # real device test tells us client-vs-server without guessing.
-    logger.info(
-        "create_outfit user=%s is_public(parsed)=%r occasion=%r capture_mode=%r",
-        user.id,
-        is_public,
-        occasion,
-        capture_mode,
-    )
-
     occasion_value = _parse_occasion(occasion)
     note_value = _parse_note(context_note)
     capture_mode_value = _parse_capture_mode(capture_mode)

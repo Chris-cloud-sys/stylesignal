@@ -891,3 +891,42 @@ neither of entry #26's synthetic approximations nor any amount of
 log-reading had produced. Once the image was cleared, the Render platform
 email (not something we went looking for — it arrived mid-session) was
 the actual missing piece.
+
+---
+
+## 28. The actual OOM cause — a per-pixel Python object explosion in preprocess
+
+Entry #27's `max_jobs` cut to 1 was a reasonable mitigation but not the
+real fix: a live retry after that deploy still triggered a second Render
+"exceeded its memory limit" email, on a single job with no concurrency
+involved at all. That ruled concurrency back out as the primary cause and
+pointed at one job's own peak memory footprint being too large on its own.
+
+Found in `app/worker/preprocess.py`'s `_open_and_normalise`, which ran
+this unconditionally on every uploaded image to strip residual metadata:
+
+```python
+stripped = Image.new("RGB", image.size)
+stripped.putdata(list(image.getdata()))
+```
+
+`image.getdata()` is a lazy pixel sequence; wrapping it in `list(...)`
+forces Pillow to box every single pixel as its own Python tuple object.
+Measured directly against the user's real ~9-megapixel phone photo, this
+one line alone peaked at **618MB** — dwarfing the rest of the pipeline
+(the whole `preprocess()` call peaks at 52MB after the fix below) and
+comfortably enough, by itself, to exceed a Render worker instance's
+memory limit regardless of `max_jobs`.
+
+Fixed by copying the raw pixel buffer instead of boxing it:
+`Image.frombytes(image.mode, image.size, image.tobytes())` — same result
+(a clean RGB image carrying no residual metadata/palette), proportional
+to the image's actual byte size rather than a large multiple of it.
+
+Diagnosis method worth noting: the thing that finally separated
+"concurrency" from "one job's own footprint" was watching a *second* live
+retry, in real time against the production DB, immediately after the
+`max_jobs=1` deploy — and having the same Render OOM email arrive again
+while that single job was still stuck at `processing`. Static reasoning
+about `max_jobs` alone would not have caught this; only watching a live
+failure repeat under a fix that should have prevented it did.

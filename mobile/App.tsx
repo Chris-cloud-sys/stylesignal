@@ -1,9 +1,10 @@
 /**
  * StyleSignal — React Native client (spec §4.1).
  *
- * Four screens and a single-level stack, so there is no navigation library to
- * link. Swap in react-navigation when the surface grows past this; every
- * screen below already takes plain callback props rather than a navigator.
+ * A single-level stack plus a persistent bottom tab bar, so there is no
+ * navigation library to link. Swap in react-navigation when the surface
+ * grows past this; every screen below already takes plain callback props
+ * rather than a navigator.
  */
 import { StatusBar } from 'expo-status-bar';
 import React, { useCallback, useEffect, useState } from 'react';
@@ -15,10 +16,13 @@ import {
 
 import { clearSession, fetchMe, loadStoredSession } from './src/api/client';
 import type { Quota } from './src/api/types';
+import { TabBar, type TabName } from './src/components/TabBar';
 import { CaptureScreen } from './src/screens/CaptureScreen';
+import { FavoritesScreen } from './src/screens/FavoritesScreen';
 import { FeedScreen } from './src/screens/FeedScreen';
 import { ForgotPasswordScreen } from './src/screens/ForgotPasswordScreen';
 import { HistoryScreen } from './src/screens/HistoryScreen';
+import { ProfileScreen } from './src/screens/ProfileScreen';
 import { ResultScreen } from './src/screens/ResultScreen';
 import { SignInScreen } from './src/screens/SignInScreen';
 import { UpgradeScreen } from './src/screens/UpgradeScreen';
@@ -29,10 +33,22 @@ type Screen =
   | { name: 'signIn' }
   | { name: 'forgotPassword' }
   | { name: 'capture' }
-  | { name: 'result'; outfitId: string }
+  | { name: 'favorites' }
   | { name: 'history' }
   | { name: 'feed' }
+  | { name: 'profile' }
+  | { name: 'result'; outfitId: string }
   | { name: 'upgrade' };
+
+/** The five tab screens share the persistent bottom bar; result/upgrade/
+ * auth screens are full-takeover and hide it. */
+const TAB_SCREENS: ReadonlySet<TabName> = new Set([
+  'capture',
+  'favorites',
+  'feed',
+  'history',
+  'profile',
+]);
 
 export default function App(): React.ReactElement {
   const [screen, setScreen] = useState<Screen>({ name: 'loading' });
@@ -69,73 +85,86 @@ export default function App(): React.ReactElement {
     setScreen({ name: 'signIn' });
   }, []);
 
+  const isTabScreen = TAB_SCREENS.has(screen.name as TabName);
+
   return (
     <SafeAreaProvider>
       <StatusBar style="dark" backgroundColor={colors.background} />
       <SafeAreaView style={styles.root} edges={['top', 'left', 'right']}>
-        {screen.name === 'loading' ? (
-          <View style={styles.centered}>
-            <ActivityIndicator color={colors.textMuted} />
-          </View>
-        ) : null}
+        <View style={styles.content}>
+          {screen.name === 'loading' ? (
+            <View style={styles.centered}>
+              <ActivityIndicator color={colors.textMuted} />
+            </View>
+          ) : null}
 
-        {screen.name === 'signIn' ? (
-          <SignInScreen
-            onSignedIn={() => void enterApp()}
-            onForgotPassword={() => setScreen({ name: 'forgotPassword' })}
-          />
-        ) : null}
+          {screen.name === 'signIn' ? (
+            <SignInScreen
+              onSignedIn={() => void enterApp()}
+              onForgotPassword={() => setScreen({ name: 'forgotPassword' })}
+            />
+          ) : null}
 
-        {screen.name === 'forgotPassword' ? (
-          <ForgotPasswordScreen onDone={() => setScreen({ name: 'signIn' })} />
-        ) : null}
+          {screen.name === 'forgotPassword' ? (
+            <ForgotPasswordScreen onDone={() => setScreen({ name: 'signIn' })} />
+          ) : null}
 
-        {screen.name === 'capture' ? (
-          <CaptureScreen
-            quota={quota}
-            onScanStarted={(outfitId) => {
-              setScreen({ name: 'result', outfitId });
-              void refreshQuota();
-            }}
-            onOpenHistory={() => setScreen({ name: 'history' })}
-            onOpenFeed={() => setScreen({ name: 'feed' })}
-            onOpenUpgrade={() => setScreen({ name: 'upgrade' })}
-            onSignOut={() => void signOut()}
-          />
-        ) : null}
+          {screen.name === 'capture' ? (
+            <CaptureScreen
+              quota={quota}
+              onScanStarted={(outfitId) => {
+                setScreen({ name: 'result', outfitId });
+                void refreshQuota();
+              }}
+              onOpenUpgrade={() => setScreen({ name: 'upgrade' })}
+            />
+          ) : null}
 
-        {screen.name === 'result' ? (
-          <ResultScreen
-            outfitId={screen.outfitId}
-            onDone={() => setScreen({ name: 'capture' })}
-            onReread={(newOutfitId) => {
-              setScreen({ name: 'result', outfitId: newOutfitId });
-              void refreshQuota();
-            }}
-          />
-        ) : null}
+          {screen.name === 'result' ? (
+            <ResultScreen
+              outfitId={screen.outfitId}
+              onDone={() => setScreen({ name: 'capture' })}
+              onReread={(newOutfitId) => {
+                setScreen({ name: 'result', outfitId: newOutfitId });
+                void refreshQuota();
+              }}
+            />
+          ) : null}
 
-        {screen.name === 'history' ? (
-          <HistoryScreen
-            onOpen={(outfitId) => setScreen({ name: 'result', outfitId })}
-            onBack={() => setScreen({ name: 'capture' })}
-          />
-        ) : null}
+          {screen.name === 'favorites' ? (
+            <FavoritesScreen onOpen={(outfitId) => setScreen({ name: 'result', outfitId })} />
+          ) : null}
 
-        {screen.name === 'feed' ? (
-          <FeedScreen
-            onBack={() => setScreen({ name: 'capture' })}
-            onRated={() => void refreshQuota()}
-          />
-        ) : null}
+          {screen.name === 'history' ? (
+            <HistoryScreen onOpen={(outfitId) => setScreen({ name: 'result', outfitId })} />
+          ) : null}
 
-        {screen.name === 'upgrade' ? (
-          <UpgradeScreen
-            onBack={() => setScreen({ name: 'capture' })}
-            onUpgraded={() => {
-              setScreen({ name: 'capture' });
-              void refreshQuota();
-            }}
+          {screen.name === 'feed' ? (
+            <FeedScreen onRated={() => void refreshQuota()} />
+          ) : null}
+
+          {screen.name === 'profile' ? (
+            <ProfileScreen
+              onSignOut={() => void signOut()}
+              onOpenUpgrade={() => setScreen({ name: 'upgrade' })}
+            />
+          ) : null}
+
+          {screen.name === 'upgrade' ? (
+            <UpgradeScreen
+              onBack={() => setScreen({ name: 'capture' })}
+              onUpgraded={() => {
+                setScreen({ name: 'capture' });
+                void refreshQuota();
+              }}
+            />
+          ) : null}
+        </View>
+
+        {isTabScreen ? (
+          <TabBar
+            active={screen.name as TabName}
+            onSelect={(tab) => setScreen({ name: tab } as Screen)}
           />
         ) : null}
       </SafeAreaView>
@@ -145,5 +174,6 @@ export default function App(): React.ReactElement {
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.background },
+  content: { flex: 1 },
   centered: { flex: 1, alignItems: 'center', justifyContent: 'center' },
 });

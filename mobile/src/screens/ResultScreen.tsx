@@ -185,6 +185,14 @@ function Complete({
         <Pressable onPress={onDone} accessibilityRole="button">
           <Text style={styles.topBarLink}>Home</Text>
         </Pressable>
+        {/* Owner-visible like count (§ SPEC+ likes) — present only when the
+            outfit is shared with the community; see get_outfit in
+            outfits.py, which only populates this for the outfit's owner. */}
+        {typeof outfit.like_count === 'number' ? (
+          <Text style={styles.topBarLikes}>
+            ♥ {outfit.like_count} {outfit.like_count === 1 ? 'like' : 'likes'}
+          </Text>
+        ) : null}
       </View>
 
       {thumb ? (
@@ -558,8 +566,14 @@ function Centered({
 
 const styles = StyleSheet.create({
   container: { padding: space.lg, paddingBottom: space.xxl },
-  topBar: { marginBottom: space.sm },
+  topBar: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'baseline',
+    marginBottom: space.sm,
+  },
   topBarLink: { ...type.meta, color: colors.textMuted },
+  topBarLikes: { ...type.meta, color: colors.accent },
   stage: { ...type.meta, color: colors.textMuted, marginBottom: space.md },
   // §7.8 the hero is a container for the photo AND the scrim-mounted
   // verdict, not the `<Image>` itself — that's what makes the overlay

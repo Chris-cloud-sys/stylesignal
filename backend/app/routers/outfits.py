@@ -318,6 +318,66 @@ def list_outfits(
     return OutfitListResponse(items=items, cursor=next_cursor)
 
 
+# --- Favorites (SPEC+ — see docs/spec-deviations.md) ------------------------
+@router.get(
+    "/favorites",
+    response_model=OutfitListResponse,
+    summary="Outfits the caller has liked",
+)
+def list_favorites(
+    limit: int = Query(default=20, ge=1, le=100),
+    cursor: Optional[str] = Query(default=None),
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> OutfitListResponse:
+    # Ordered by when the caller liked it, not when it was scanned — a
+    # favorites list is about the caller's own curation, not the outfit's
+    # timeline. Reuses OutfitListItem/the History cursor shape rather than
+    # inventing a parallel one, since the row rendering is identical.
+    statement = (
+        select(Outfit, Like.created_at.label("liked_at"))
+        .join(Like, Like.outfit_id == Outfit.id)
+        .where(
+            Like.liker_id == user.id,
+            Outfit.deleted_at.is_(None),
+            Outfit.is_public.is_(True),
+        )
+        .order_by(Like.created_at.desc(), Outfit.id.desc())
+        .limit(limit + 1)
+    )
+
+    decoded = _decode_cursor(cursor)
+    if decoded is not None:
+        liked_at, last_id = decoded
+        statement = statement.where(
+            (Like.created_at < liked_at)
+            | ((Like.created_at == liked_at) & (Outfit.id < last_id))
+        )
+
+    rows = list(db.execute(statement).all())
+    has_more = len(rows) > limit
+    rows = rows[:limit]
+
+    storage = get_storage()
+    like_counts = _like_counts([outfit.id for outfit, _liked_at in rows], db)
+    items = [
+        OutfitListItem(
+            outfit_id=outfit.id,
+            status=outfit.status,
+            thumb_url=_thumb_url(storage, outfit),
+            occasion=outfit.occasion,
+            created_at=outfit.created_at,
+            like_count=like_counts.get(outfit.id),
+        )
+        for outfit, _liked_at in rows
+    ]
+
+    next_cursor = (
+        _encode_cursor(rows[-1][1], rows[-1][0].id) if has_more and rows else None
+    )
+    return OutfitListResponse(items=items, cursor=next_cursor)
+
+
 # --- §6.2 status + feedback ------------------------------------------------
 @router.get(
     "/{outfit_id}",

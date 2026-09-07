@@ -653,6 +653,64 @@ def test_cannot_like_a_private_outfit(client):
     assert blocked.status_code == 404
 
 
+# --- Favorites ---------------------------------------------------------------
+def test_favorites_lists_liked_outfits_most_recently_liked_first(client):
+    author = client.post(
+        "/v1/auth/register",
+        json={"email": "fav-author-{0}@x.com".format(uuid.uuid4().hex[:8]), "password": "a-long-password"},
+    ).json()
+    client.headers.update({"Authorization": "Bearer " + author["access_token"]})
+    first = upload(client, is_public="true")["outfit_id"]
+    wait_for_terminal(client, first)
+    second = upload(client, is_public="true")["outfit_id"]
+    wait_for_terminal(client, second)
+    unliked = upload(client, is_public="true")["outfit_id"]
+    wait_for_terminal(client, unliked)
+
+    liker = client.post(
+        "/v1/auth/register",
+        json={"email": "fav-liker-{0}@x.com".format(uuid.uuid4().hex[:8]), "password": "a-long-password"},
+    ).json()
+    client.headers.update({"Authorization": "Bearer " + liker["access_token"]})
+
+    # Liked in order first -> second, so favorites (most-recently-liked
+    # first) should come back second, first — not upload order, and never
+    # the outfit the liker never touched.
+    client.post("/v1/outfits/{0}/likes".format(first))
+    client.post("/v1/outfits/{0}/likes".format(second))
+
+    favorites = client.get("/v1/outfits/favorites").json()
+    assert [item["outfit_id"] for item in favorites["items"]] == [second, first]
+    assert all(item["like_count"] == 1 for item in favorites["items"])
+    assert unliked not in {item["outfit_id"] for item in favorites["items"]}
+
+
+def test_unliking_removes_it_from_favorites(client):
+    author = client.post(
+        "/v1/auth/register",
+        json={"email": "fav-unlike-a-{0}@x.com".format(uuid.uuid4().hex[:8]), "password": "a-long-password"},
+    ).json()
+    client.headers.update({"Authorization": "Bearer " + author["access_token"]})
+    outfit_id = upload(client, is_public="true")["outfit_id"]
+    wait_for_terminal(client, outfit_id)
+
+    liker = client.post(
+        "/v1/auth/register",
+        json={"email": "fav-unlike-b-{0}@x.com".format(uuid.uuid4().hex[:8]), "password": "a-long-password"},
+    ).json()
+    client.headers.update({"Authorization": "Bearer " + liker["access_token"]})
+
+    client.post("/v1/outfits/{0}/likes".format(outfit_id))
+    assert len(client.get("/v1/outfits/favorites").json()["items"]) == 1
+
+    client.delete("/v1/outfits/{0}/likes".format(outfit_id))
+    assert client.get("/v1/outfits/favorites").json()["items"] == []
+
+
+def test_favorites_is_empty_for_a_fresh_account(auth_client):
+    assert auth_client.get("/v1/outfits/favorites").json() == {"items": [], "cursor": None}
+
+
 # --- Media -----------------------------------------------------------------
 def test_thumbnail_requires_a_valid_signature(auth_client):
     outfit_id = upload(auth_client)["outfit_id"]

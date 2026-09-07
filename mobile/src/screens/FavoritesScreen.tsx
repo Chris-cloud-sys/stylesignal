@@ -1,4 +1,4 @@
-/** Scan history — spec §6.3. */
+/** Favorites — outfits the caller has liked (SPEC+, docs/spec-deviations.md). */
 import React, { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
@@ -10,7 +10,7 @@ import {
   View,
 } from 'react-native';
 
-import { absoluteMediaUrl, deleteOutfit, fetchHistory } from '../api/client';
+import { absoluteMediaUrl, fetchFavorites, unlikeOutfit } from '../api/client';
 import type { OutfitListItem } from '../api/types';
 import { Button } from '../components/primitives';
 import { colors, radius, sentenceCase, space, type } from '../theme';
@@ -19,7 +19,7 @@ interface Props {
   onOpen: (outfitId: string) => void;
 }
 
-export function HistoryScreen({ onOpen }: Props): React.ReactElement {
+export function FavoritesScreen({ onOpen }: Props): React.ReactElement {
   const [items, setItems] = useState<OutfitListItem[]>([]);
   const [cursor, setCursor] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -28,14 +28,14 @@ export function HistoryScreen({ onOpen }: Props): React.ReactElement {
 
   const load = useCallback(async (nextCursor?: string | null): Promise<void> => {
     try {
-      const page = await fetchHistory(nextCursor);
+      const page = await fetchFavorites(nextCursor);
       setItems((existing) =>
         nextCursor ? [...existing, ...page.items] : page.items,
       );
       setCursor(page.cursor ?? null);
       setError(null);
     } catch {
-      setError('Could not load your history.');
+      setError('Could not load your favorites.');
     } finally {
       setLoading(false);
       setLoadingMore(false);
@@ -49,7 +49,7 @@ export function HistoryScreen({ onOpen }: Props): React.ReactElement {
   const remove = async (outfitId: string): Promise<void> => {
     setItems((existing) => existing.filter((item) => item.outfit_id !== outfitId));
     try {
-      await deleteOutfit(outfitId);
+      await unlikeOutfit(outfitId);
     } catch {
       void load();
     }
@@ -66,7 +66,7 @@ export function HistoryScreen({ onOpen }: Props): React.ReactElement {
   return (
     <View style={styles.flex}>
       <View style={styles.header}>
-        <Text style={styles.title}>History</Text>
+        <Text style={styles.title}>Favorites</Text>
       </View>
 
       {error ? <Text style={styles.error}>{error}</Text> : null}
@@ -77,7 +77,7 @@ export function HistoryScreen({ onOpen }: Props): React.ReactElement {
         contentContainerStyle={styles.list}
         ListEmptyComponent={
           <Text style={styles.empty}>
-            Nothing here yet. Your scans will collect on this screen.
+            Nothing here yet. Liking a read in Community adds it here.
           </Text>
         }
         onEndReachedThreshold={0.4}
@@ -111,17 +111,15 @@ export function HistoryScreen({ onOpen }: Props): React.ReactElement {
                 {item.occasion ? sentenceCase(item.occasion) : 'No occasion tagged'}
               </Text>
               <Text style={styles.rowMeta}>
-                {new Date(item.created_at).toLocaleDateString()} ·{' '}
-                {statusWord(item.status)}
                 {typeof item.like_count === 'number'
-                  ? ` · ${item.like_count} ${item.like_count === 1 ? 'like' : 'likes'}`
-                  : ''}
+                  ? `${item.like_count} ${item.like_count === 1 ? 'like' : 'likes'}`
+                  : 'Shared with the community'}
               </Text>
             </View>
 
             <Button
               variant="quiet"
-              label="Delete"
+              label="Unlike"
               onPress={() => void remove(item.outfit_id)}
             />
           </Pressable>
@@ -129,17 +127,6 @@ export function HistoryScreen({ onOpen }: Props): React.ReactElement {
       />
     </View>
   );
-}
-
-function statusWord(status: OutfitListItem['status']): string {
-  switch (status) {
-    case 'complete':
-      return 'Read ready';
-    case 'failed':
-      return 'Did not finish';
-    default:
-      return 'Still reading';
-  }
 }
 
 const styles = StyleSheet.create({
@@ -151,9 +138,6 @@ const styles = StyleSheet.create({
     backgroundColor: colors.background,
   },
   header: {
-    flexDirection: 'row',
-    alignItems: 'baseline',
-    justifyContent: 'space-between',
     paddingHorizontal: space.lg,
     paddingTop: space.lg,
     paddingBottom: space.md,

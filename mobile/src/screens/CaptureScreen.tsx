@@ -9,6 +9,7 @@
  * flow owns the "quick check before I leave" job, and setup friction is what
  * makes people quit competitors by day two.
  */
+import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import * as ImageManipulator from 'expo-image-manipulator';
 import * as ImagePicker from 'expo-image-picker';
 import React, { useState } from 'react';
@@ -29,7 +30,7 @@ import {
 
 import { ApiError, uploadOutfit } from '../api/client';
 import type { Quota } from '../api/types';
-import { Button, Chip, HangerIcon, SectionLabel } from '../components/primitives';
+import { Button, Chip, SectionLabel } from '../components/primitives';
 import {
   CAPTURE_MODES,
   CONTEXT_NOTE_MAX_LENGTH,
@@ -44,19 +45,13 @@ import { colors, radius, sentenceCase, space, type, weight } from '../theme';
 interface Props {
   quota: Quota | null;
   onScanStarted: (outfitId: string) => void;
-  onOpenHistory: () => void;
-  onOpenFeed: () => void;
   onOpenUpgrade: () => void;
-  onSignOut: () => void;
 }
 
 export function CaptureScreen({
   quota,
   onScanStarted,
-  onOpenHistory,
-  onOpenFeed,
   onOpenUpgrade,
-  onSignOut,
 }: Props): React.ReactElement {
   const [imageUri, setImageUri] = useState<string | null>(null);
   const [captureMode, setCaptureMode] = useState<CaptureMode>('worn');
@@ -182,14 +177,6 @@ export function CaptureScreen({
       >
         <View style={styles.header}>
           <Text style={styles.wordmark}>StyleSignal</Text>
-          <View style={styles.headerLinks}>
-            <Pressable onPress={onOpenFeed} accessibilityRole="button">
-              <Text style={styles.headerLink}>Community</Text>
-            </Pressable>
-            <Pressable onPress={onOpenHistory} accessibilityRole="button">
-              <Text style={styles.headerLink}>History</Text>
-            </Pressable>
-          </View>
         </View>
 
         {quota ? <QuotaLine quota={quota} onOpenUpgrade={onOpenUpgrade} /> : null}
@@ -231,15 +218,25 @@ export function CaptureScreen({
             <Image source={{ uri: imageUri }} style={styles.previewImage} resizeMode="cover" />
           ) : (
             <View style={styles.previewEmpty}>
-              <HangerIcon />
-              <Text style={styles.previewTitle}>
-                {captureMode === 'worn' ? 'Add a photo of the outfit' : 'Add a photo of the item'}
-              </Text>
-              <Text style={styles.previewHint}>
-                {captureMode === 'worn'
-                  ? 'Full length works best.'
-                  : 'A clear, well-lit shot of the piece works best.'}
-              </Text>
+              {/* Icon + caption compose as one badge, not icon-then-separate-
+                  text — the glyph itself changes with capture mode: a
+                  portrait silhouette for "on me" (worn on a person), a real
+                  hanger for "an item, not worn" (photographed on its own). */}
+              <View style={styles.previewIconBadge}>
+                {captureMode === 'worn' ? (
+                  <Ionicons name="person-circle-outline" size={40} color={colors.textMuted} />
+                ) : (
+                  <MaterialCommunityIcons name="hanger" size={36} color={colors.textMuted} />
+                )}
+                <Text style={styles.previewTitle}>
+                  {captureMode === 'worn' ? 'Add a photo of the outfit' : 'Add a photo of the item'}
+                </Text>
+                <Text style={styles.previewHint}>
+                  {captureMode === 'worn'
+                    ? 'Full length works best.'
+                    : 'A clear, well-lit shot of the piece works best.'}
+                </Text>
+              </View>
             </View>
           )}
         </Pressable>
@@ -324,8 +321,6 @@ export function CaptureScreen({
           busy={busy}
           style={styles.submit}
         />
-
-        <Button variant="quiet" label="Sign out" onPress={onSignOut} />
       </ScrollView>
     </KeyboardAvoidingView>
   );
@@ -370,8 +365,6 @@ const styles = StyleSheet.create({
     marginBottom: space.xs,
   },
   wordmark: { ...type.title, color: colors.text },
-  headerLinks: { flexDirection: 'row', gap: space.md },
-  headerLink: { ...type.meta, color: colors.textMuted },
   quota: { ...type.meta, color: colors.textMuted, marginBottom: space.lg },
   // §7.9 "scans-left is a subtle pill and an upgrade moment".
   quotaPill: {
@@ -431,6 +424,17 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     padding: space.lg,
+  },
+  // The badge that "contains" the icon + caption as one composed unit,
+  // rather than an icon floating above separate text.
+  previewIconBadge: {
+    alignItems: 'center',
+    backgroundColor: colors.background,
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    borderColor: colors.border,
+    paddingVertical: space.md,
+    paddingHorizontal: space.lg,
     gap: space.xs,
   },
   previewTitle: { ...type.bodyMedium, color: colors.text, marginTop: space.xs },

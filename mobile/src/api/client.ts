@@ -265,6 +265,12 @@ export function deleteOutfit(outfitId: string): Promise<void> {
   return request<void>(`/v1/outfits/${outfitId}`, { method: 'DELETE' });
 }
 
+/** Outfits the caller has liked, most-recently-liked first. */
+export function fetchFavorites(cursor?: string | null): Promise<OutfitListResponse> {
+  const query = cursor ? `?limit=20&cursor=${encodeURIComponent(cursor)}` : '?limit=20';
+  return request<OutfitListResponse>(`/v1/outfits/favorites${query}`);
+}
+
 // --- Community rating loop (§6.5) -------------------------------------------
 export function fetchFeed(cursor?: string | null): Promise<FeedResponse> {
   const query = cursor ? `?limit=20&cursor=${encodeURIComponent(cursor)}` : '?limit=20';

@@ -382,18 +382,6 @@ function DotGlyph(): React.ReactElement {
   return <View style={styles.textureDot} />;
 }
 
-// --- Empty-state hanger glyph (§7.9 "upload card is guided, not a void") ---
-export function HangerIcon(): React.ReactElement {
-  return (
-    <View style={styles.hanger}>
-      <View style={styles.hangerHook} />
-      <View style={[styles.hangerArm, styles.hangerArmLeft]} />
-      <View style={[styles.hangerArm, styles.hangerArmRight]} />
-      <View style={styles.hangerBar} />
-    </View>
-  );
-}
-
 const styles = StyleSheet.create({
   passwordField: {
     flexDirection: 'row',
@@ -573,39 +561,4 @@ const styles = StyleSheet.create({
     alignContent: 'space-between',
   },
   textureDot: { width: 4, height: 4, borderRadius: 2, backgroundColor: colors.accent },
-
-  // A hook ring plus two arms rotated around their own centres (default RN
-  // transform origin) — each arm is pre-positioned so its unrotated centre
-  // sits at the midpoint of apex-to-shoulder, which is what makes the
-  // rotated segment land exactly on [apex, shoulder] without needing
-  // `transformOrigin` (spottier RN/Fabric support) at all.
-  hanger: { width: 64, height: 30 },
-  hangerHook: {
-    position: 'absolute',
-    left: 27.5,
-    top: 1,
-    width: 9,
-    height: 9,
-    borderRadius: 4.5,
-    borderWidth: 1.5,
-    borderColor: colors.textMuted,
-  },
-  hangerArm: {
-    position: 'absolute',
-    width: 26,
-    height: 2,
-    borderRadius: 1,
-    backgroundColor: colors.textMuted,
-  },
-  hangerArmLeft: { left: 8.2, top: 16.3, transform: [{ rotate: '-34deg' }] },
-  hangerArmRight: { left: 29.8, top: 16.3, transform: [{ rotate: '34deg' }] },
-  hangerBar: {
-    position: 'absolute',
-    left: 10.5,
-    top: 23.8,
-    width: 43,
-    height: 1.5,
-    borderRadius: 0.75,
-    backgroundColor: colors.textMuted,
-  },
 });

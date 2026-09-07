@@ -26,7 +26,6 @@ import { Button } from '../components/primitives';
 import { colors, radius, sentenceCase, space, type, weight } from '../theme';
 
 interface Props {
-  onBack: () => void;
   /** Lets App.tsx refresh the scans-left pill after an earn. */
   onRated: () => void;
 }
@@ -68,7 +67,7 @@ const DIMENSIONS: Array<{
   },
 ];
 
-export function FeedScreen({ onBack, onRated }: Props): React.ReactElement {
+export function FeedScreen({ onRated }: Props): React.ReactElement {
   const [items, setItems] = useState<FeedItem[]>([]);
   const [cursor, setCursor] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -114,9 +113,6 @@ export function FeedScreen({ onBack, onRated }: Props): React.ReactElement {
     <View style={styles.flex}>
       <View style={styles.header}>
         <Text style={styles.title}>Community</Text>
-        <Pressable onPress={onBack} accessibilityRole="button">
-          <Text style={styles.headerLink}>Done</Text>
-        </Pressable>
       </View>
 
       {error ? <Text style={styles.error}>{error}</Text> : null}
@@ -317,7 +313,6 @@ const styles = StyleSheet.create({
     paddingBottom: space.md,
   },
   title: { ...type.title, color: colors.text },
-  headerLink: { ...type.meta, color: colors.textMuted },
   list: { paddingHorizontal: space.lg, paddingBottom: space.xxl },
   empty: { ...type.body, color: colors.textMuted, marginTop: space.xl },
   error: {

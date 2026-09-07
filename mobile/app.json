@@ -31,7 +31,8 @@
           "photosPermission": "StyleSignal reads photos you pick so it can describe the outfit in them.",
           "cameraPermission": "StyleSignal uses your camera to photograph the outfit you want described."
         }
-      ]
+      ],
+      "expo-font"
     ],
     "extra": {
       "apiBaseUrl": "https://stylesignal-backend.onrender.com",

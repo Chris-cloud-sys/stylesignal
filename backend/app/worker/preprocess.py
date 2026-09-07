@@ -84,8 +84,14 @@ def _open_and_normalise(data: bytes) -> Image.Image:
     elif image.mode != "RGB":
         image = image.convert("RGB")
 
-    stripped = Image.new("RGB", image.size)
-    stripped.putdata(list(image.getdata()))
+    # Flatten to a clean RGB image with no residual metadata/palette. Doing
+    # this via list(image.getdata()) allocated one Python tuple object per
+    # pixel (~9M for a real 4000x2252 phone photo) — hundreds of MB of pure
+    # object overhead, enough on its own to exceed a Render worker's memory
+    # limit regardless of job concurrency (docs/spec-deviations.md #27/#28).
+    # Copying the raw byte buffer instead costs roughly the image's actual
+    # pixel-data size (~27MB for that same photo), not a multiple of it.
+    stripped = Image.frombytes("RGB", image.size, image.tobytes())
     return stripped
 
 

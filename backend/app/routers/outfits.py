@@ -21,10 +21,11 @@ from ..db import get_db
 from ..deps import get_current_user
 from ..errors import APIError, bad_request, not_found
 from ..jobs import get_queue
-from ..models import Like, Outfit, User
+from ..models import Favorite, Like, Outfit, User
 from ..quota import consume_scan, refund_scan
 from ..schemas import (
     ColourOut,
+    FavoriteResponse,
     FeedbackOut,
     FullReadOut,
     GarmentNoteOut,
@@ -71,7 +72,11 @@ def create_outfit(
     occasion: Optional[str] = Form(default=None),
     context_note: Optional[str] = Form(default=None),
     capture_mode: Optional[str] = Form(default=None),
-    is_public: bool = Form(default=False),
+    # No client-sent value falls back to the caller's Profile-level default
+    # (User.default_share_public) — the per-scan toggle this used to be
+    # reset to off after every submit, which is what the Profile setting
+    # replaces.
+    is_public: Optional[bool] = Form(default=None),
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> OutfitCreateResponse:
@@ -82,6 +87,7 @@ def create_outfit(
     occasion_value = _parse_occasion(occasion)
     note_value = _parse_note(context_note)
     capture_mode_value = _parse_capture_mode(capture_mode)
+    is_public_value = user.default_share_public if is_public is None else is_public
     data = _read_upload(image)
 
     # Charge the scan before doing any work, so a burst of parallel uploads
@@ -94,7 +100,7 @@ def create_outfit(
         occasion=occasion_value,
         context_note=note_value,
         capture_mode=capture_mode_value,
-        is_public=is_public,
+        is_public=is_public_value,
     )
     db.add(outfit)
     db.flush()
@@ -129,7 +135,7 @@ def presign_outfit(
     occasion: Optional[str] = Form(default=None),
     context_note: Optional[str] = Form(default=None),
     capture_mode: Optional[str] = Form(default=None),
-    is_public: bool = Form(default=False),
+    is_public: Optional[bool] = Form(default=None),
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> PresignedUploadResponse:
@@ -145,7 +151,7 @@ def presign_outfit(
         occasion=_parse_occasion(occasion),
         context_note=_parse_note(context_note),
         capture_mode=_parse_capture_mode(capture_mode),
-        is_public=is_public,
+        is_public=user.default_share_public if is_public is None else is_public,
     )
     db.add(outfit)
     db.flush()
@@ -319,10 +325,14 @@ def list_outfits(
 
 
 # --- Favorites (SPEC+ — see docs/spec-deviations.md) ------------------------
+# Deliberately separate from Like: liking something in Community no longer
+# adds it here automatically — favoriting is its own explicit action, and
+# (unlike Like, which stays others-only) it can apply to the caller's own
+# outfits too, since it carries no community-visibility implication.
 @router.get(
     "/favorites",
     response_model=OutfitListResponse,
-    summary="Outfits the caller has liked",
+    summary="Outfits the caller has favorited",
 )
 def list_favorites(
     limit: int = Query(default=20, ge=1, le=100),
@@ -330,28 +340,31 @@ def list_favorites(
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> OutfitListResponse:
-    # Ordered by when the caller liked it, not when it was scanned — a
+    # Ordered by when the caller favorited it, not when it was scanned — a
     # favorites list is about the caller's own curation, not the outfit's
     # timeline. Reuses OutfitListItem/the History cursor shape rather than
     # inventing a parallel one, since the row rendering is identical.
     statement = (
-        select(Outfit, Like.created_at.label("liked_at"))
-        .join(Like, Like.outfit_id == Outfit.id)
+        select(Outfit, Favorite.created_at.label("favorited_at"))
+        .join(Favorite, Favorite.outfit_id == Outfit.id)
         .where(
-            Like.liker_id == user.id,
+            Favorite.user_id == user.id,
             Outfit.deleted_at.is_(None),
-            Outfit.is_public.is_(True),
+            # Visible to the caller: still-public, or their own outfit —
+            # a favorite on your own (possibly private) outfit shouldn't
+            # vanish from your list just because it was never shared.
+            (Outfit.is_public.is_(True)) | (Outfit.user_id == user.id),
         )
-        .order_by(Like.created_at.desc(), Outfit.id.desc())
+        .order_by(Favorite.created_at.desc(), Outfit.id.desc())
         .limit(limit + 1)
     )
 
     decoded = _decode_cursor(cursor)
     if decoded is not None:
-        liked_at, last_id = decoded
+        favorited_at, last_id = decoded
         statement = statement.where(
-            (Like.created_at < liked_at)
-            | ((Like.created_at == liked_at) & (Outfit.id < last_id))
+            (Favorite.created_at < favorited_at)
+            | ((Favorite.created_at == favorited_at) & (Outfit.id < last_id))
         )
 
     rows = list(db.execute(statement).all())
@@ -359,7 +372,7 @@ def list_favorites(
     rows = rows[:limit]
 
     storage = get_storage()
-    like_counts = _like_counts([outfit.id for outfit, _liked_at in rows], db)
+    like_counts = _like_counts([outfit.id for outfit, _favorited_at in rows], db)
     items = [
         OutfitListItem(
             outfit_id=outfit.id,
@@ -369,13 +382,74 @@ def list_favorites(
             created_at=outfit.created_at,
             like_count=like_counts.get(outfit.id),
         )
-        for outfit, _liked_at in rows
+        for outfit, _favorited_at in rows
     ]
 
     next_cursor = (
         _encode_cursor(rows[-1][1], rows[-1][0].id) if has_more and rows else None
     )
     return OutfitListResponse(items=items, cursor=next_cursor)
+
+
+@router.post(
+    "/{outfit_id}/favorites",
+    response_model=FavoriteResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Add an outfit to the caller's favorites",
+)
+def favorite_outfit(
+    outfit_id: uuid.UUID,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> FavoriteResponse:
+    _favoritable_outfit(db, outfit_id, user)
+
+    existing = db.execute(
+        select(Favorite).where(
+            Favorite.outfit_id == outfit_id, Favorite.user_id == user.id
+        )
+    ).scalar_one_or_none()
+    if existing is None:
+        db.add(Favorite(outfit_id=outfit_id, user_id=user.id))
+        db.commit()
+
+    return FavoriteResponse(outfit_id=outfit_id, favorited=True)
+
+
+@router.delete(
+    "/{outfit_id}/favorites",
+    response_model=FavoriteResponse,
+    summary="Remove an outfit from the caller's favorites",
+)
+def unfavorite_outfit(
+    outfit_id: uuid.UUID,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> FavoriteResponse:
+    _favoritable_outfit(db, outfit_id, user)
+
+    existing = db.execute(
+        select(Favorite).where(
+            Favorite.outfit_id == outfit_id, Favorite.user_id == user.id
+        )
+    ).scalar_one_or_none()
+    if existing is not None:
+        db.delete(existing)
+        db.commit()
+
+    return FavoriteResponse(outfit_id=outfit_id, favorited=False)
+
+
+def _favoritable_outfit(db: Session, outfit_id: uuid.UUID, user: User) -> Outfit:
+    outfit = db.get(Outfit, outfit_id)
+    if (
+        outfit is None
+        or outfit.deleted_at is not None
+        or outfit.status != "complete"
+        or (not outfit.is_public and outfit.user_id != user.id)
+    ):
+        raise not_found("Outfit")
+    return outfit
 
 
 # --- §6.2 status + feedback ------------------------------------------------

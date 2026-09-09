@@ -134,6 +134,9 @@ export interface Me {
     plan: string;
     is_stylist: boolean;
     created_at: string;
+    /** Profile-level default for the "share for community feedback"
+     * choice — replaces what used to be a per-scan toggle. */
+    default_share_public: boolean;
   };
   quota: Quota;
 }
@@ -156,12 +159,20 @@ export interface FeedItem {
   occasion?: string | null;
   like_count: number;
   liked_by_me: boolean;
+  favorited_by_me: boolean;
 }
 
 export interface LikeResponse {
   outfit_id: string;
   liked: boolean;
   like_count: number;
+}
+
+/** SPEC+ — a personal bookmark, deliberately separate from Like (a like no
+ * longer auto-adds an outfit to favorites). */
+export interface FavoriteResponse {
+  outfit_id: string;
+  favorited: boolean;
 }
 
 export interface FeedResponse {

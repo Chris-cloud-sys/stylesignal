@@ -17,9 +17,10 @@ from ..config import get_settings
 from ..db import get_db
 from ..deps import get_current_user
 from ..errors import APIError, bad_request, not_found
-from ..models import Like, Outfit, Rating, User
+from ..models import Favorite, Like, Outfit, Rating, User
 from ..quota import credit_rating, quota_out
 from ..schemas import (
+    FavoriteResponse,
     FeedItem,
     FeedResponse,
     LikeResponse,
@@ -79,6 +80,11 @@ def get_feed(
         .where(Like.outfit_id == Outfit.id, Like.liker_id == user.id)
         .scalar_subquery()
     )
+    favorited_by_me_subq = (
+        select(func.count(Favorite.id))
+        .where(Favorite.outfit_id == Outfit.id, Favorite.user_id == user.id)
+        .scalar_subquery()
+    )
 
     statement = (
         select(
@@ -86,6 +92,7 @@ def get_feed(
             rating_count.label("rating_count"),
             like_count_subq.label("like_count"),
             liked_by_me_subq.label("liked_by_me"),
+            favorited_by_me_subq.label("favorited_by_me"),
         )
         .outerjoin(Rating, Rating.outfit_id == Outfit.id)
         .where(
@@ -113,8 +120,9 @@ def get_feed(
             occasion=outfit.occasion,
             like_count=like_count,
             liked_by_me=bool(liked_by_me),
+            favorited_by_me=bool(favorited_by_me),
         )
-        for outfit, _rating_count, like_count, liked_by_me in rows
+        for outfit, _rating_count, like_count, liked_by_me, favorited_by_me in rows
     ]
 
     offset = _decode_offset(cursor) + len(items)

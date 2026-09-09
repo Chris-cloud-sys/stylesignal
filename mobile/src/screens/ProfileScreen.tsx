@@ -1,8 +1,8 @@
-/** Profile — account info, quota, and sign out (moved off Home). */
+/** Profile — account info, quota, sharing default, and sign out (moved off Home). */
 import React, { useEffect, useState } from 'react';
-import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, StyleSheet, Switch, Text, View } from 'react-native';
 
-import { fetchMe } from '../api/client';
+import { fetchMe, updateSharingDefault } from '../api/client';
 import type { Me } from '../api/types';
 import { Button, SectionLabel } from '../components/primitives';
 import { colors, space, type } from '../theme';
@@ -15,6 +15,7 @@ interface Props {
 export function ProfileScreen({ onSignOut, onOpenUpgrade }: Props): React.ReactElement {
   const [me, setMe] = useState<Me | null>(null);
   const [loading, setLoading] = useState(true);
+  const [sharingBusy, setSharingBusy] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -29,6 +30,23 @@ export function ProfileScreen({ onSignOut, onOpenUpgrade }: Props): React.ReactE
       cancelled = true;
     };
   }, []);
+
+  const toggleSharing = async (value: boolean): Promise<void> => {
+    if (!me || sharingBusy) return;
+    const previous = me.user.default_share_public;
+    setSharingBusy(true);
+    setMe({ ...me, user: { ...me.user, default_share_public: value } });
+    try {
+      const updated = await updateSharingDefault(value);
+      setMe(updated);
+    } catch {
+      setMe((current) =>
+        current ? { ...current, user: { ...current.user, default_share_public: previous } } : current,
+      );
+    } finally {
+      setSharingBusy(false);
+    }
+  };
 
   return (
     <View style={styles.flex}>
@@ -69,6 +87,27 @@ export function ProfileScreen({ onSignOut, onOpenUpgrade }: Props): React.ReactE
             </View>
           ) : null}
 
+          {me ? (
+            <View style={styles.block}>
+              <View style={styles.sharingRow}>
+                <View style={styles.sharingCopy}>
+                  <Text style={styles.sharingTitle}>Share for community feedback</Text>
+                  <Text style={styles.meta}>
+                    On by default. When on, new scans can be seen and rated
+                    by other members. Applies to scans going forward — to
+                    remove one already shared, delete it from History.
+                  </Text>
+                </View>
+                <Switch
+                  value={me.user.default_share_public}
+                  onValueChange={(value) => void toggleSharing(value)}
+                  trackColor={{ true: colors.accent, false: colors.border }}
+                  thumbColor={colors.surface}
+                />
+              </View>
+            </View>
+          ) : null}
+
           <Button
             variant="quiet"
             label="Sign out"
@@ -95,5 +134,8 @@ const styles = StyleSheet.create({
   email: { ...type.bodyMedium, color: colors.text, marginTop: space.xs },
   meta: { ...type.body, color: colors.textMuted, marginTop: space.xs },
   upgradeButton: { marginTop: space.md, alignSelf: 'flex-start' },
+  sharingRow: { flexDirection: 'row', alignItems: 'center' },
+  sharingCopy: { flex: 1, paddingRight: space.md },
+  sharingTitle: { ...type.bodyMedium, color: colors.text },
   signOut: { marginTop: space.md },
 });

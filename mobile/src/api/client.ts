@@ -10,6 +10,7 @@ import * as SecureStore from 'expo-secure-store';
 import { API_BASE_URL } from '../config';
 import type {
   ApiErrorBody,
+  FavoriteResponse,
   FeedResponse,
   IapPlatform,
   LikeResponse,
@@ -189,6 +190,16 @@ export function fetchMe(): Promise<Me> {
   return request<Me>('/v1/auth/me');
 }
 
+/** Profile-level "share for community feedback" default (replaces the old
+ * per-scan toggle, which reset to off after every submit). */
+export function updateSharingDefault(defaultSharePublic: boolean): Promise<Me> {
+  return request<Me>('/v1/auth/me', {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ default_share_public: defaultSharePublic }),
+  });
+}
+
 export function requestPasswordReset(email: string): Promise<void> {
   return request<{ status: string }>(
     '/v1/auth/password-reset/request',
@@ -226,7 +237,12 @@ export async function uploadOutfit(params: {
   if (params.occasion) form.append('occasion', params.occasion);
   if (params.contextNote) form.append('context_note', params.contextNote);
   if (params.captureMode) form.append('capture_mode', params.captureMode);
-  form.append('is_public', params.isPublic ? 'true' : 'false');
+  // Omitted (not just falsy) when the caller doesn't pass one, so the
+  // backend falls back to the account's Profile-level default instead of
+  // this silently forcing every scan private.
+  if (params.isPublic !== undefined) {
+    form.append('is_public', params.isPublic ? 'true' : 'false');
+  }
 
   // Do not set Content-Type — the runtime adds the multipart boundary.
   return request<{ outfit_id: string; status: string }>('/v1/outfits', {
@@ -296,6 +312,16 @@ export function likeOutfit(outfitId: string): Promise<LikeResponse> {
 
 export function unlikeOutfit(outfitId: string): Promise<LikeResponse> {
   return request<LikeResponse>(`/v1/outfits/${outfitId}/likes`, { method: 'DELETE' });
+}
+
+/** SPEC+ — a personal bookmark, separate from liking. Liking an outfit no
+ * longer adds it here automatically. */
+export function favoriteOutfit(outfitId: string): Promise<FavoriteResponse> {
+  return request<FavoriteResponse>(`/v1/outfits/${outfitId}/favorites`, { method: 'POST' });
+}
+
+export function unfavoriteOutfit(outfitId: string): Promise<FavoriteResponse> {
+  return request<FavoriteResponse>(`/v1/outfits/${outfitId}/favorites`, { method: 'DELETE' });
 }
 
 // --- Billing (SPEC+ — native IAP, docs/spec-deviations.md #18) -------------

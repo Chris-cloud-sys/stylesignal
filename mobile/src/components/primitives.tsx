@@ -4,6 +4,7 @@
  * Editorial restraint: Ink and Bone carry the screen, Amber appears only on
  * the primary action and on active state.
  */
+import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import React, { useState } from 'react';
 import {
   ActivityIndicator,
@@ -235,22 +236,32 @@ export function Swatches({ hexes }: { hexes: string[] }): React.ReactElement | n
 }
 
 // --- Icon badges (§7.8 "quick reads get an icon + rhythm") -----------------
-// Plain View/StyleSheet geometry, not SVG line art — react-native-svg would
-// need a new native module in the dev client build. A simple, distinct glyph
-// per dimension in an amber-tinted circle carries the rhythm the spec asks
-// for without that rebuild; swap for real line icons later if it's worth
-// the extra build cycle.
+// @expo/vector-icons line icons in an amber-tinted rounded-square badge —
+// one icon set across Eye/Colour/Formality/Texture/Fit, matching the app's
+// existing icon vocabulary (CaptureScreen, TabBar) rather than hand-drawn
+// View geometry.
 export type QuickReadDimension = string;
 
-const DIMENSION_GLYPH: Record<string, React.FC> = {
-  colour: ColourGlyph,
-  color: ColourGlyph,
-  formality: FormalityGlyph,
-  proportion: RulerGlyph,
-  fit: RulerGlyph,
-  texture: TextureGlyph,
-  pattern: TextureGlyph,
+type DimensionIcon =
+  | { set: 'ionicons'; name: keyof typeof Ionicons.glyphMap }
+  | { set: 'mci'; name: keyof typeof MaterialCommunityIcons.glyphMap };
+
+const DIMENSION_ICON: Record<string, DimensionIcon> = {
+  colour: { set: 'ionicons', name: 'color-palette-outline' },
+  color: { set: 'ionicons', name: 'color-palette-outline' },
+  formality: { set: 'mci', name: 'scale-balance' },
+  proportion: { set: 'mci', name: 'ruler' },
+  fit: { set: 'mci', name: 'ruler' },
+  texture: { set: 'mci', name: 'dots-grid' },
+  pattern: { set: 'mci', name: 'dots-grid' },
 };
+
+function DimensionGlyph({ icon }: { icon: DimensionIcon }): React.ReactElement {
+  if (icon.set === 'mci') {
+    return <MaterialCommunityIcons name={icon.name} size={20} color={colors.accent} />;
+  }
+  return <Ionicons name={icon.name} size={20} color={colors.accent} />;
+}
 
 // The backend's quick_reads dimension enum (colour, formality, proportion,
 // pattern, texture, fit — see vlm.py's _QUICK_READ_DIMENSIONS) is finer-
@@ -275,10 +286,13 @@ export function dimensionLabel(dimension: QuickReadDimension): string {
 }
 
 export function IconBadge({ dimension }: { dimension: QuickReadDimension }): React.ReactElement {
-  const Glyph = DIMENSION_GLYPH[dimension.toLowerCase()] ?? DotGlyph;
+  const icon = DIMENSION_ICON[dimension.toLowerCase()] ?? {
+    set: 'ionicons' as const,
+    name: 'ellipse-outline' as const,
+  };
   return (
     <View style={styles.iconBadge}>
-      <Glyph />
+      <DimensionGlyph icon={icon} />
     </View>
   );
 }
@@ -286,9 +300,7 @@ export function IconBadge({ dimension }: { dimension: QuickReadDimension }): Rea
 export function EyeBadge(): React.ReactElement {
   return (
     <View style={styles.iconBadge}>
-      <View style={styles.eyeOuter}>
-        <View style={styles.eyePupil} />
-      </View>
+      <Ionicons name="eye-outline" size={20} color={colors.accent} />
     </View>
   );
 }
@@ -337,49 +349,6 @@ export function FormalityStepBars({
       })}
     </View>
   );
-}
-
-function ColourGlyph(): React.ReactElement {
-  return (
-    <View style={styles.colourGlyphRow}>
-      <View style={[styles.colourGlyphDot, { backgroundColor: colors.text }]} />
-      <View style={[styles.colourGlyphDot, styles.colourGlyphDotOverlap, { backgroundColor: colors.accent }]} />
-    </View>
-  );
-}
-
-function FormalityGlyph(): React.ReactElement {
-  return (
-    <View style={styles.formalityGlyph}>
-      <View style={styles.formalityGlyphDot} />
-      <View style={styles.formalityGlyphBar} />
-      <View style={styles.formalityGlyphDot} />
-    </View>
-  );
-}
-
-function RulerGlyph(): React.ReactElement {
-  return (
-    <View style={styles.rulerGlyph}>
-      {[0, 1, 2, 3].map((tick) => (
-        <View key={tick} style={[styles.rulerTick, tick % 2 === 0 && styles.rulerTickTall]} />
-      ))}
-    </View>
-  );
-}
-
-function TextureGlyph(): React.ReactElement {
-  return (
-    <View style={styles.textureGlyph}>
-      {[0, 1, 2, 3].map((dot) => (
-        <View key={dot} style={styles.textureDot} />
-      ))}
-    </View>
-  );
-}
-
-function DotGlyph(): React.ReactElement {
-  return <View style={styles.textureDot} />;
 }
 
 const styles = StyleSheet.create({
@@ -518,23 +487,13 @@ const styles = StyleSheet.create({
 
   // --- Icon badges ---
   iconBadge: {
-    width: 32,
-    height: 32,
-    borderRadius: radius.pill,
+    width: 40,
+    height: 40,
+    borderRadius: radius.md,
     backgroundColor: '#FAF2E1',
     alignItems: 'center',
     justifyContent: 'center',
   },
-  eyeOuter: {
-    width: 16,
-    height: 10,
-    borderRadius: 8,
-    borderWidth: 1.5,
-    borderColor: colors.accent,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  eyePupil: { width: 5, height: 5, borderRadius: 2.5, backgroundColor: colors.accent },
   formalitySteps: {
     flexDirection: 'row',
     alignItems: 'flex-end',
@@ -543,22 +502,4 @@ const styles = StyleSheet.create({
     marginTop: space.xs,
   },
   formalityStepBar: { width: 8, borderRadius: 2, backgroundColor: colors.accent },
-  colourGlyphRow: { flexDirection: 'row' },
-  colourGlyphDot: { width: 10, height: 10, borderRadius: 5 },
-  colourGlyphDotOverlap: { marginLeft: -4 },
-  formalityGlyph: { flexDirection: 'row', alignItems: 'center', width: 18 },
-  formalityGlyphDot: { width: 5, height: 5, borderRadius: 2.5, backgroundColor: colors.accent },
-  formalityGlyphBar: { flex: 1, height: 1.5, backgroundColor: colors.accent, marginHorizontal: 2 },
-  rulerGlyph: { flexDirection: 'row', alignItems: 'flex-end', gap: 2, height: 14 },
-  rulerTick: { width: 1.5, height: 7, backgroundColor: colors.accent },
-  rulerTickTall: { height: 14 },
-  textureGlyph: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    width: 14,
-    height: 14,
-    justifyContent: 'space-between',
-    alignContent: 'space-between',
-  },
-  textureDot: { width: 4, height: 4, borderRadius: 2, backgroundColor: colors.accent },
 });

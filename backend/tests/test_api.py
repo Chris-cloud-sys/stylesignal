@@ -493,7 +493,7 @@ def test_private_outfits_never_reach_the_feed(client):
         json={"email": "priv-{0}@x.com".format(uuid.uuid4().hex[:8]), "password": "a-long-password"},
     ).json()
     client.headers.update({"Authorization": "Bearer " + author["access_token"]})
-    private = upload(client)  # is_public defaults to False
+    private = upload(client, is_public="false")
     wait_for_terminal(client, private["outfit_id"])
 
     rater = client.post(
@@ -640,7 +640,7 @@ def test_cannot_like_a_private_outfit(client):
         json={"email": "priv-like-{0}@x.com".format(uuid.uuid4().hex[:8]), "password": "a-long-password"},
     ).json()
     client.headers.update({"Authorization": "Bearer " + author["access_token"]})
-    private = upload(client)  # is_public defaults to False
+    private = upload(client, is_public="false")
     wait_for_terminal(client, private["outfit_id"])
 
     other = client.post(
@@ -654,7 +654,34 @@ def test_cannot_like_a_private_outfit(client):
 
 
 # --- Favorites ---------------------------------------------------------------
-def test_favorites_lists_liked_outfits_most_recently_liked_first(client):
+# SPEC+ — deliberately decoupled from Like: liking something no longer
+# auto-favorites it (docs/spec-deviations.md). Favoriting is its own
+# explicit action via POST/DELETE .../favorites.
+def test_liking_an_outfit_does_not_add_it_to_favorites(client):
+    author = client.post(
+        "/v1/auth/register",
+        json={"email": "fav-decouple-a-{0}@x.com".format(uuid.uuid4().hex[:8]), "password": "a-long-password"},
+    ).json()
+    client.headers.update({"Authorization": "Bearer " + author["access_token"]})
+    outfit_id = upload(client, is_public="true")["outfit_id"]
+    wait_for_terminal(client, outfit_id)
+
+    liker = client.post(
+        "/v1/auth/register",
+        json={"email": "fav-decouple-b-{0}@x.com".format(uuid.uuid4().hex[:8]), "password": "a-long-password"},
+    ).json()
+    client.headers.update({"Authorization": "Bearer " + liker["access_token"]})
+
+    client.post("/v1/outfits/{0}/likes".format(outfit_id))
+    assert client.get("/v1/outfits/favorites").json()["items"] == []
+
+    favorited = client.post("/v1/outfits/{0}/favorites".format(outfit_id))
+    assert favorited.status_code == 201
+    assert favorited.json() == {"outfit_id": outfit_id, "favorited": True}
+    assert len(client.get("/v1/outfits/favorites").json()["items"]) == 1
+
+
+def test_favorites_lists_favorited_outfits_most_recently_favorited_first(client):
     author = client.post(
         "/v1/auth/register",
         json={"email": "fav-author-{0}@x.com".format(uuid.uuid4().hex[:8]), "password": "a-long-password"},
@@ -664,51 +691,110 @@ def test_favorites_lists_liked_outfits_most_recently_liked_first(client):
     wait_for_terminal(client, first)
     second = upload(client, is_public="true")["outfit_id"]
     wait_for_terminal(client, second)
-    unliked = upload(client, is_public="true")["outfit_id"]
-    wait_for_terminal(client, unliked)
+    unfavorited = upload(client, is_public="true")["outfit_id"]
+    wait_for_terminal(client, unfavorited)
 
-    liker = client.post(
+    fan = client.post(
         "/v1/auth/register",
-        json={"email": "fav-liker-{0}@x.com".format(uuid.uuid4().hex[:8]), "password": "a-long-password"},
+        json={"email": "fav-fan-{0}@x.com".format(uuid.uuid4().hex[:8]), "password": "a-long-password"},
     ).json()
-    client.headers.update({"Authorization": "Bearer " + liker["access_token"]})
+    client.headers.update({"Authorization": "Bearer " + fan["access_token"]})
 
-    # Liked in order first -> second, so favorites (most-recently-liked
-    # first) should come back second, first — not upload order, and never
-    # the outfit the liker never touched.
-    client.post("/v1/outfits/{0}/likes".format(first))
-    client.post("/v1/outfits/{0}/likes".format(second))
+    # Favorited in order first -> second, so favorites (most-recently-
+    # favorited first) should come back second, first — not upload order,
+    # and never the outfit the fan never touched.
+    client.post("/v1/outfits/{0}/favorites".format(first))
+    client.post("/v1/outfits/{0}/favorites".format(second))
 
     favorites = client.get("/v1/outfits/favorites").json()
     assert [item["outfit_id"] for item in favorites["items"]] == [second, first]
-    assert all(item["like_count"] == 1 for item in favorites["items"])
-    assert unliked not in {item["outfit_id"] for item in favorites["items"]}
+    assert unfavorited not in {item["outfit_id"] for item in favorites["items"]}
 
 
-def test_unliking_removes_it_from_favorites(client):
+def test_unfavoriting_removes_it_from_favorites(client):
     author = client.post(
         "/v1/auth/register",
-        json={"email": "fav-unlike-a-{0}@x.com".format(uuid.uuid4().hex[:8]), "password": "a-long-password"},
+        json={"email": "fav-unfav-a-{0}@x.com".format(uuid.uuid4().hex[:8]), "password": "a-long-password"},
     ).json()
     client.headers.update({"Authorization": "Bearer " + author["access_token"]})
     outfit_id = upload(client, is_public="true")["outfit_id"]
     wait_for_terminal(client, outfit_id)
 
-    liker = client.post(
+    fan = client.post(
         "/v1/auth/register",
-        json={"email": "fav-unlike-b-{0}@x.com".format(uuid.uuid4().hex[:8]), "password": "a-long-password"},
+        json={"email": "fav-unfav-b-{0}@x.com".format(uuid.uuid4().hex[:8]), "password": "a-long-password"},
     ).json()
-    client.headers.update({"Authorization": "Bearer " + liker["access_token"]})
+    client.headers.update({"Authorization": "Bearer " + fan["access_token"]})
 
-    client.post("/v1/outfits/{0}/likes".format(outfit_id))
+    client.post("/v1/outfits/{0}/favorites".format(outfit_id))
     assert len(client.get("/v1/outfits/favorites").json()["items"]) == 1
 
-    client.delete("/v1/outfits/{0}/likes".format(outfit_id))
+    unfavorited = client.delete("/v1/outfits/{0}/favorites".format(outfit_id))
+    assert unfavorited.status_code == 200
+    assert unfavorited.json() == {"outfit_id": outfit_id, "favorited": False}
     assert client.get("/v1/outfits/favorites").json()["items"] == []
+
+
+def test_can_favorite_your_own_outfit(auth_client):
+    # Unlike Like (others-only), Favorite carries no community-visibility
+    # implication — it's a personal bookmark, so self-favoriting is fine.
+    outfit_id = upload(auth_client, is_public="false")["outfit_id"]
+    wait_for_terminal(auth_client, outfit_id)
+
+    favorited = auth_client.post("/v1/outfits/{0}/favorites".format(outfit_id))
+    assert favorited.status_code == 201
+    items = auth_client.get("/v1/outfits/favorites").json()["items"]
+    assert [item["outfit_id"] for item in items] == [outfit_id]
+
+
+def test_cannot_favorite_someone_elses_private_outfit(client):
+    author = client.post(
+        "/v1/auth/register",
+        json={"email": "fav-priv-a-{0}@x.com".format(uuid.uuid4().hex[:8]), "password": "a-long-password"},
+    ).json()
+    client.headers.update({"Authorization": "Bearer " + author["access_token"]})
+    private = upload(client, is_public="false")["outfit_id"]
+    wait_for_terminal(client, private)
+
+    other = client.post(
+        "/v1/auth/register",
+        json={"email": "fav-priv-b-{0}@x.com".format(uuid.uuid4().hex[:8]), "password": "a-long-password"},
+    ).json()
+    client.headers.update({"Authorization": "Bearer " + other["access_token"]})
+
+    blocked = client.post("/v1/outfits/{0}/favorites".format(private))
+    assert blocked.status_code == 404
 
 
 def test_favorites_is_empty_for_a_fresh_account(auth_client):
     assert auth_client.get("/v1/outfits/favorites").json() == {"items": [], "cursor": None}
+
+
+# --- Community-sharing default (SPEC+ — moved from a per-scan toggle to a
+# Profile-level preference, default on) --------------------------------------
+def test_new_scan_is_public_by_default(auth_client):
+    outfit_id = upload(auth_client)["outfit_id"]
+    detail = wait_for_terminal(auth_client, outfit_id)
+    assert detail["is_public"] is True
+
+
+def test_turning_off_the_sharing_default_makes_new_scans_private(auth_client):
+    settings_response = auth_client.patch(
+        "/v1/auth/me", json={"default_share_public": False}
+    )
+    assert settings_response.status_code == 200
+    assert settings_response.json()["user"]["default_share_public"] is False
+
+    outfit_id = upload(auth_client)["outfit_id"]
+    detail = wait_for_terminal(auth_client, outfit_id)
+    assert detail["is_public"] is False
+
+
+def test_explicit_is_public_overrides_the_profile_default(auth_client):
+    auth_client.patch("/v1/auth/me", json={"default_share_public": False})
+    outfit_id = upload(auth_client, is_public="true")["outfit_id"]
+    detail = wait_for_terminal(auth_client, outfit_id)
+    assert detail["is_public"] is True
 
 
 # --- Media -----------------------------------------------------------------

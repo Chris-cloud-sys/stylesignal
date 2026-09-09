@@ -28,6 +28,12 @@ class RefreshRequest(BaseModel):
     refresh_token: str
 
 
+class UpdateSettingsRequest(BaseModel):
+    """PATCH /v1/auth/me — currently just the community-sharing default."""
+
+    default_share_public: bool
+
+
 class PasswordResetRequestRequest(BaseModel):
     email: EmailStr
 
@@ -72,6 +78,7 @@ class UserOut(BaseModel):
     plan: str
     is_stylist: bool
     created_at: datetime
+    default_share_public: bool
 
 
 class MeResponse(BaseModel):
@@ -206,6 +213,7 @@ class FeedItem(BaseModel):
     occasion: Optional[str] = None
     like_count: int = 0
     liked_by_me: bool = False
+    favorited_by_me: bool = False
 
 
 class FeedResponse(BaseModel):
@@ -217,6 +225,11 @@ class LikeResponse(BaseModel):
     outfit_id: uuid.UUID
     liked: bool
     like_count: int
+
+
+class FavoriteResponse(BaseModel):
+    outfit_id: uuid.UUID
+    favorited: bool
 
 
 class RatingRequest(BaseModel):

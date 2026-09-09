@@ -21,7 +21,6 @@ import {
   Pressable,
   ScrollView,
   StyleSheet,
-  Switch,
   Text,
   TextInput,
   useWindowDimensions,
@@ -57,7 +56,6 @@ export function CaptureScreen({
   const [captureMode, setCaptureMode] = useState<CaptureMode>('worn');
   const [occasion, setOccasion] = useState<Occasion | null>(null);
   const [note, setNote] = useState('');
-  const [isPublic, setIsPublic] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [quotaExceeded, setQuotaExceeded] = useState(false);
@@ -126,13 +124,11 @@ export function CaptureScreen({
         occasion,
         contextNote: note.trim() || null,
         captureMode,
-        isPublic,
       });
       setImageUri(null);
       setNote('');
       setOccasion(null);
       setCaptureMode('worn');
-      setIsPublic(false);
       onScanStarted(created.outfit_id);
     } catch (caught) {
       if (caught instanceof ApiError) {
@@ -286,22 +282,6 @@ export function CaptureScreen({
           <Text style={styles.counter}>
             {note.length} of {CONTEXT_NOTE_MAX_LENGTH}
           </Text>
-        </View>
-
-        <View style={styles.publicRow}>
-          <View style={styles.publicCopy}>
-            <Text style={styles.publicTitle}>Share for community feedback</Text>
-            <Text style={styles.publicHint}>
-              Off by default. When on, other members can see this outfit and
-              rate it. You can turn it off again by deleting the scan.
-            </Text>
-          </View>
-          <Switch
-            value={isPublic}
-            onValueChange={setIsPublic}
-            trackColor={{ true: colors.accent, false: colors.border }}
-            thumbColor={colors.surface}
-          />
         </View>
 
         {error ? <Text style={styles.error}>{error}</Text> : null}
@@ -464,15 +444,6 @@ const styles = StyleSheet.create({
     textAlign: 'right',
     marginTop: space.xs,
   },
-
-  publicRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: space.lg,
-  },
-  publicCopy: { flex: 1, paddingRight: space.md },
-  publicTitle: { ...type.bodyMedium, color: colors.text },
-  publicHint: { ...type.meta, color: colors.textMuted, marginTop: space.xs },
 
   error: { ...type.meta, color: colors.systemError, marginBottom: space.md },
   upgradeButton: { marginBottom: space.md },

@@ -930,3 +930,51 @@ retry, in real time against the production DB, immediately after the
 while that single job was still stuck at `processing`. Static reasoning
 about `max_jobs` alone would not have caught this; only watching a live
 failure repeat under a fix that should have prevented it did.
+
+---
+
+## 29. Community sharing moved to Profile (default on) + Like/Favorite split
+
+Two related SPEC+ changes, requested and implemented together.
+
+**Sharing default.** "Share for community feedback" was a per-scan toggle
+on Home that reset to off after every submit — Chris reported the toggle
+"disabling itself," which was this reset being mistaken for a bug. Moved
+to Profile as a standing account preference (`User.default_share_public`,
+default `true`, new `PATCH /v1/auth/me`), read by `create_outfit`/
+`presign_outfit` whenever the request doesn't pass an explicit
+`is_public` override. The mobile client no longer sends the field at all
+(the per-scan toggle is gone), so every scan now defers to the Profile
+setting; the API still accepts an explicit override for flexibility/
+testing. Existing accounts got the column via a direct `ALTER TABLE ...
+DEFAULT true` against production (no Alembic in this project — see
+`app/db.py`), so nobody's outfits silently changed visibility.
+
+**Like vs. Favorite.** These used to be the same table — "Favorites" was
+literally "outfits you've liked," and `list_favorites`'s own docstring
+said so. Chris's ask was specific: liking an outfit should never silently
+curate a list the user didn't ask for. Split into a new `Favorite` model,
+its own `POST`/`DELETE /v1/outfits/{id}/favorites`, and `GET
+/v1/outfits/favorites` switched to query it instead of `Like`. One
+deliberate asymmetry: `Like` stays others-only (`_likeable_outfit` blocks
+self-likes, unchanged), but `Favorite` allows favoriting your own outfits
+— it's a personal bookmark with no community-visibility implication, so
+there's no reason to block it, and `_favoritable_outfit`'s visibility
+check is "public OR mine" rather than `Like`'s "public AND not mine."
+
+**Owner-side like visibility** turned out to already be structurally
+correct — the Community feed already excludes the caller's own outfits
+(`Outfit.user_id != user.id`), so there was never a code path where an
+owner could see an unlike button on their own outfit. `ResultScreen`
+already showed the owner's like count (added in entry #22); no change
+needed there.
+
+**Icons.** The quick-read dimension badges (Eye, Colour, Formality,
+Texture, Fit) were hand-drawn from plain `View` rectangles (§7.8's
+original note: "not SVG line art — would need a new native module"). That
+constraint no longer applies — `@expo/vector-icons` was added earlier
+this session for the capture-mode icons and the tab bar — so all five
+were swapped for real line icons from that set (`eye-outline`,
+`color-palette-outline`, `scale-balance`, `dots-grid`, `ruler`) inside the
+same amber-tinted badge, now a rounded square (`radius.md`) rather than a
+circle, matching the reference the icons were designed against.

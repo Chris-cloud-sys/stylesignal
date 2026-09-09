@@ -9,6 +9,7 @@
  * see app/routers/feed.py), so "Submit rating" sends whichever dimensions
  * were touched and the card is gone either way.
  */
+import { Ionicons } from '@expo/vector-icons';
 import React, { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
@@ -20,7 +21,15 @@ import {
   View,
 } from 'react-native';
 
-import { absoluteMediaUrl, fetchFeed, likeOutfit, rateOutfit, unlikeOutfit } from '../api/client';
+import {
+  absoluteMediaUrl,
+  favoriteOutfit,
+  fetchFeed,
+  likeOutfit,
+  rateOutfit,
+  unfavoriteOutfit,
+  unlikeOutfit,
+} from '../api/client';
 import type { FeedItem, RatingDimension } from '../api/types';
 import { Button } from '../components/primitives';
 import { colors, radius, sentenceCase, space, type, weight } from '../theme';
@@ -161,13 +170,17 @@ function FeedCard({
   const [liked, setLiked] = useState(item.liked_by_me);
   const [likeCount, setLikeCount] = useState(item.like_count);
   const [likeBusy, setLikeBusy] = useState(false);
+  const [favorited, setFavorited] = useState(item.favorited_by_me);
+  const [favoriteBusy, setFavoriteBusy] = useState(false);
   const thumb = absoluteMediaUrl(item.thumb_url);
   const hasAnyValue = Object.keys(values).length > 0;
 
-  // SPEC+ — likes/favorites, no dislike counterpart. Separate from the 1-5
-  // rating dimensions above: this is a lightweight favoriting action, not
-  // training signal, so it doesn't touch the earn-by-rating loop and
-  // doesn't drop the card from the feed the way submitting a rating does.
+  // SPEC+ — a lightweight community engagement signal, no dislike
+  // counterpart. Separate from the 1-5 rating dimensions above (not
+  // training signal, doesn't touch the earn-by-rating loop) and separate
+  // from Favorite below (liking no longer auto-adds an outfit to
+  // favorites) — neither drops the card from the feed the way submitting a
+  // rating does.
   const toggleLike = async (): Promise<void> => {
     if (likeBusy) return;
     const wasLiked = liked;
@@ -185,6 +198,25 @@ function FeedCard({
       setLikeCount((count) => count + (wasLiked ? 1 : -1));
     } finally {
       setLikeBusy(false);
+    }
+  };
+
+  // SPEC+ — a personal "save this to my list" bookmark, distinct from the
+  // like above. Never touched by toggleLike.
+  const toggleFavorite = async (): Promise<void> => {
+    if (favoriteBusy) return;
+    const wasFavorited = favorited;
+    setFavoriteBusy(true);
+    setFavorited(!wasFavorited);
+    try {
+      const response = wasFavorited
+        ? await unfavoriteOutfit(item.outfit_id)
+        : await favoriteOutfit(item.outfit_id);
+      setFavorited(response.favorited);
+    } catch {
+      setFavorited(wasFavorited);
+    } finally {
+      setFavoriteBusy(false);
     }
   };
 
@@ -221,17 +253,31 @@ function FeedCard({
         ) : (
           <View />
         )}
-        <Pressable
-          onPress={() => void toggleLike()}
-          style={styles.likeButton}
-          accessibilityRole="button"
-          accessibilityLabel={liked ? 'Unlike this outfit' : 'Like this outfit'}
-        >
-          <Text style={[styles.likeGlyph, liked && styles.likeGlyphActive]}>
-            {liked ? '♥' : '♡'}
-          </Text>
-          <Text style={styles.likeCount}>{likeCount}</Text>
-        </Pressable>
+        <View style={styles.cardActions}>
+          <Pressable
+            onPress={() => void toggleLike()}
+            style={styles.likeButton}
+            accessibilityRole="button"
+            accessibilityLabel={liked ? 'Unlike this outfit' : 'Like this outfit'}
+          >
+            <Text style={[styles.likeGlyph, liked && styles.likeGlyphActive]}>
+              {liked ? '♥' : '♡'}
+            </Text>
+            <Text style={styles.likeCount}>{likeCount}</Text>
+          </Pressable>
+          <Pressable
+            onPress={() => void toggleFavorite()}
+            style={styles.favoriteButton}
+            accessibilityRole="button"
+            accessibilityLabel={favorited ? 'Remove from favorites' : 'Add to favorites'}
+          >
+            <Ionicons
+              name={favorited ? 'bookmark' : 'bookmark-outline'}
+              size={18}
+              color={favorited ? colors.accent : colors.textMuted}
+            />
+          </Pressable>
+        </View>
       </View>
 
       {DIMENSIONS.map((dimension) => (
@@ -353,12 +399,14 @@ const styles = StyleSheet.create({
     marginBottom: space.md,
   },
   cardOccasion: { ...type.meta, color: colors.textMuted },
+  cardActions: { flexDirection: 'row', alignItems: 'center' },
   // §2.6: amber is the accent, never red — a liked heart stays on-brand
   // rather than reaching for the conventional red fill.
   likeButton: { flexDirection: 'row', alignItems: 'center', gap: space.xs, padding: space.xs },
   likeGlyph: { fontSize: 18, color: colors.textMuted },
   likeGlyphActive: { color: colors.accent },
   likeCount: { ...type.meta, color: colors.textMuted },
+  favoriteButton: { padding: space.xs },
   cardSubmit: { marginTop: space.sm },
 
   ratingRow: { marginBottom: space.md },

@@ -130,6 +130,15 @@ class User(Base):
     iap_product_id: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
     iap_transaction_id: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
 
+    # SPEC+ — account-level default for the "share for community feedback"
+    # choice (docs/spec-deviations.md). Was a per-scan toggle that reset to
+    # off after every submit; moved to Profile as a standing preference,
+    # default on, read by create_outfit whenever a scan doesn't pass an
+    # explicit override.
+    default_share_public: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=True, server_default="true"
+    )
+
     tenant: Mapped[Optional[Tenant]] = relationship(back_populates="users")
     outfits: Mapped[List["Outfit"]] = relationship(
         back_populates="user", cascade="all, delete-orphan"
@@ -188,6 +197,9 @@ class Outfit(Base):
         back_populates="outfit", cascade="all, delete-orphan"
     )
     likes: Mapped[List["Like"]] = relationship(
+        back_populates="outfit", cascade="all, delete-orphan"
+    )
+    favorites: Mapped[List["Favorite"]] = relationship(
         back_populates="outfit", cascade="all, delete-orphan"
     )
 
@@ -367,6 +379,37 @@ class Like(Base):
     )
 
     outfit: Mapped[Outfit] = relationship(back_populates="likes")
+
+
+class Favorite(Base):
+    """SPEC+ — a personal bookmark, deliberately separate from Like.
+
+    Liking an outfit in Community is a lightweight engagement signal;
+    favoriting is a deliberate "save this to my list" action. They used to
+    be the same table (a "favorites" screen that just listed likes) — split
+    apart so liking something doesn't silently curate a list the user never
+    asked for, and so favoriting (which has no community-visibility
+    implication) can apply to a caller's own outfits too, unlike Like, which
+    stays others-only (see _likeable_outfit in routers/feed.py).
+    """
+
+    __tablename__ = "favorites"
+    __table_args__ = (
+        UniqueConstraint("outfit_id", "user_id", name="uq_favorite_outfit_user"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=_uuid)
+    outfit_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid, ForeignKey("outfits.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=_utcnow
+    )
+
+    outfit: Mapped[Outfit] = relationship(back_populates="favorites")
 
 
 class ModelVersion(Base):

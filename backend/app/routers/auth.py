@@ -24,6 +24,7 @@ from ..schemas import (
     RegisterRequest,
     StatusResponse,
     TokenPair,
+    UpdateSettingsRequest,
     UserOut,
 )
 from ..security import (
@@ -111,6 +112,18 @@ def refresh_tokens(
 
 @router.get("/me", response_model=MeResponse)
 def me(user: User = Depends(get_current_user)) -> MeResponse:
+    return MeResponse(user=UserOut.model_validate(user), quota=quota_out(user))
+
+
+@router.patch("/me", response_model=MeResponse)
+def update_me(
+    payload: UpdateSettingsRequest,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> MeResponse:
+    user.default_share_public = payload.default_share_public
+    db.commit()
+    db.refresh(user)
     return MeResponse(user=UserOut.model_validate(user), quota=quota_out(user))
 
 

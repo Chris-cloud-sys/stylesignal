@@ -1,4 +1,5 @@
-/** Favorites — outfits the caller has liked (SPEC+, docs/spec-deviations.md). */
+/** Favorites — outfits the caller has explicitly bookmarked, separate from
+ * liking (SPEC+, docs/spec-deviations.md). */
 import React, { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
@@ -10,7 +11,7 @@ import {
   View,
 } from 'react-native';
 
-import { absoluteMediaUrl, fetchFavorites, unlikeOutfit } from '../api/client';
+import { absoluteMediaUrl, fetchFavorites, unfavoriteOutfit } from '../api/client';
 import type { OutfitListItem } from '../api/types';
 import { Button } from '../components/primitives';
 import { colors, radius, sentenceCase, space, type } from '../theme';
@@ -49,7 +50,7 @@ export function FavoritesScreen({ onOpen }: Props): React.ReactElement {
   const remove = async (outfitId: string): Promise<void> => {
     setItems((existing) => existing.filter((item) => item.outfit_id !== outfitId));
     try {
-      await unlikeOutfit(outfitId);
+      await unfavoriteOutfit(outfitId);
     } catch {
       void load();
     }
@@ -77,7 +78,8 @@ export function FavoritesScreen({ onOpen }: Props): React.ReactElement {
         contentContainerStyle={styles.list}
         ListEmptyComponent={
           <Text style={styles.empty}>
-            Nothing here yet. Liking a read in Community adds it here.
+            Nothing here yet. Tap the bookmark on a read in Community to
+            save it here.
           </Text>
         }
         onEndReachedThreshold={0.4}
@@ -119,7 +121,7 @@ export function FavoritesScreen({ onOpen }: Props): React.ReactElement {
 
             <Button
               variant="quiet"
-              label="Unlike"
+              label="Remove"
               onPress={() => void remove(item.outfit_id)}
             />
           </Pressable>

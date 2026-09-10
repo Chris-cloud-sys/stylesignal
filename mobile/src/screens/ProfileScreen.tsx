@@ -14,6 +14,8 @@ interface Props {
   onOpenProfile: (userId: string) => void;
   /** SPEC+ — personal signal history (docs/spec-deviations.md). */
   onOpenInsights: () => void;
+  /** SPEC+ — wardrobe catalog (docs/spec-deviations.md). */
+  onOpenWardrobe: () => void;
 }
 
 export function ProfileScreen({
@@ -21,6 +23,7 @@ export function ProfileScreen({
   onOpenUpgrade,
   onOpenProfile,
   onOpenInsights,
+  onOpenWardrobe,
 }: Props): React.ReactElement {
   const [me, setMe] = useState<Me | null>(null);
   const [loading, setLoading] = useState(true);
@@ -140,9 +143,16 @@ export function ProfileScreen({
 
           <Button
             variant="secondary"
+            label="Wardrobe"
+            onPress={onOpenWardrobe}
+            style={styles.insightsButton}
+          />
+
+          <Button
+            variant="secondary"
             label="Your style, so far"
             onPress={onOpenInsights}
-            style={styles.insightsButton}
+            style={styles.wardrobeLinkSpacing}
           />
 
           <Button
@@ -176,5 +186,6 @@ const styles = StyleSheet.create({
   sharingCopy: { flex: 1, paddingRight: space.md },
   sharingTitle: { ...type.bodyMedium, color: colors.text },
   insightsButton: { marginTop: space.lg },
+  wardrobeLinkSpacing: { marginTop: space.sm },
   signOut: { marginTop: space.md },
 });

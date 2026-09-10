@@ -28,6 +28,7 @@ import { ResultScreen } from './src/screens/ResultScreen';
 import { SignInScreen } from './src/screens/SignInScreen';
 import { UpgradeScreen } from './src/screens/UpgradeScreen';
 import { UserProfileScreen } from './src/screens/UserProfileScreen';
+import { WardrobeScreen } from './src/screens/WardrobeScreen';
 import { colors } from './src/theme';
 
 type Screen =
@@ -42,7 +43,8 @@ type Screen =
   | { name: 'result'; outfitId: string }
   | { name: 'upgrade' }
   | { name: 'userProfile'; userId: string; from: TabName }
-  | { name: 'insights' };
+  | { name: 'insights' }
+  | { name: 'wardrobe' };
 
 /** The five tab screens share the persistent bottom bar; result/upgrade/
  * auth screens are full-takeover and hide it. */
@@ -156,11 +158,19 @@ export default function App(): React.ReactElement {
               onOpenUpgrade={() => setScreen({ name: 'upgrade' })}
               onOpenProfile={(userId) => setScreen({ name: 'userProfile', userId, from: 'profile' })}
               onOpenInsights={() => setScreen({ name: 'insights' })}
+              onOpenWardrobe={() => setScreen({ name: 'wardrobe' })}
             />
           ) : null}
 
           {screen.name === 'insights' ? (
             <InsightsScreen onBack={() => setScreen({ name: 'profile' })} />
+          ) : null}
+
+          {screen.name === 'wardrobe' ? (
+            <WardrobeScreen
+              onBack={() => setScreen({ name: 'profile' })}
+              onOpenOutfit={(outfitId) => setScreen({ name: 'result', outfitId })}
+            />
           ) : null}
 
           {screen.name === 'userProfile' ? (

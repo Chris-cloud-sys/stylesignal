@@ -1052,3 +1052,52 @@ All three needed a production schema change applied directly (no
 Alembic, per `app/db.py`'s `init_db` docstring): `outfit_feedback.
 elevate_suggestion` (nullable text) and the new `follows` table.
 Insights needed none — it's pure aggregation over existing columns.
+
+---
+
+## 31. Wardrobe catalog — a conscious reversal of §2.3
+
+Chris asked for this one directly, after being shown the tradeoff plainly:
+§2.3 says "no wardrobe to catalogue here on purpose... setup friction is
+what makes people quit competitors by day two." That reasoning doesn't
+stop being true just because this shipped — it's a deliberate re-decision,
+not a walk-back of the original one being wrong.
+
+Scoped narrowly to avoid recreating the setup friction the original
+decision was avoiding: **wardrobe entries only come from "item, not worn"
+scans**, via a new "Add to wardrobe" action on that scan's own read. An
+item-mode scan is already a clean single-garment photo — there's no
+second, dedicated flat-lay photography ritual to design or ask for. A
+worn-outfit photo is explicitly rejected (`not_item_mode`, 400) — it
+doesn't decompose into a single piece cleanly enough to snapshot as one
+wardrobe entry.
+
+New `WardrobeItem` model: a **snapshot**, not a live reference — category/
+colors/pattern/formality are copied from the source scan's `Garment` row
+at add-time, not read from it later. This matters because a photo can be
+re-read under a different occasion (entry #21) after being added to the
+wardrobe; without the snapshot, that later re-read could retroactively
+change a saved wardrobe entry's colours out from under the catalog.
+
+`POST/GET/DELETE` live in a new `wardrobe.py` router rather than
+`outfits.py` — the wardrobe is its own resource, addressed by its own id,
+even though adding one is scoped by an outfit id. Idempotent by design
+(`uq_wardrobe_item_outfit` — one outfit can only ever produce one
+wardrobe entry): re-posting returns the existing entry rather than
+erroring or duplicating. No image duplication — a wardrobe entry reuses
+its source outfit's own thumbnail (`thumb_key`) rather than storing a
+second copy of the photo.
+
+`OutfitDetail.in_wardrobe` follows the same "only meaningful sometimes"
+convention as `like_count` (entry #22) — `None` for a worn scan (nothing
+to add), `true`/`false` once the scan is a completed item-mode read, so
+`ResultScreen`'s "Add to wardrobe" button knows whether to show
+added/not-added without a separate lookup.
+
+Deliberately still not attempted here: matching a wardrobe item against
+future scans ("you're wearing something from your wardrobe"), outfit
+planning/combination suggestions from cataloged items, or manual add of
+an arbitrary photo outside the item-mode capture flow. All three were on
+the table when this was scoped and cut to keep the reversal bounded —
+worth revisiting once the item-mode-only version has real usage to learn
+from.

@@ -1003,3 +1003,120 @@ def test_insights_excludes_deleted_scans(auth_client):
 
     insights = auth_client.get("/v1/insights").json()
     assert insights["scan_count"] == 4
+
+
+# --- Wardrobe catalog (SPEC+, docs/spec-deviations.md) ----------------------
+def _add_fake_garment(outfit_id: str) -> None:
+    """VLM is disabled in tests, so garment detection never runs and no
+    Garment row exists to snapshot into a wardrobe entry — insert one
+    directly, the same way _make_pro reaches past the API for setup."""
+    from app.db import SessionLocal
+    from app.models import Garment
+
+    db = SessionLocal()
+    try:
+        db.add(
+            Garment(
+                outfit_id=uuid.UUID(outfit_id),
+                category="jacket",
+                bbox={"x": 0.1, "y": 0.1, "w": 0.8, "h": 0.8},
+                colors=[{"hex": "#334455", "weight": 1.0}],
+                pattern="solid",
+                formality=0.6,
+            )
+        )
+        db.commit()
+    finally:
+        db.close()
+
+
+def test_add_item_mode_scan_to_wardrobe(auth_client):
+    outfit_id = upload(auth_client, capture_mode="item")["outfit_id"]
+    wait_for_terminal(auth_client, outfit_id)
+    _add_fake_garment(outfit_id)
+
+    added = auth_client.post(
+        "/v1/outfits/{0}/wardrobe".format(outfit_id), json={"note": "grey wool coat"}
+    )
+    assert added.status_code == 201, added.text
+    body = added.json()
+    assert body["outfit_id"] == outfit_id
+    assert body["note"] == "grey wool coat"
+    assert body["category"]
+    assert isinstance(body["colors"], list)
+
+    detail = auth_client.get("/v1/outfits/{0}".format(outfit_id)).json()
+    assert detail["in_wardrobe"] is True
+
+
+def test_cannot_add_a_worn_mode_scan_to_wardrobe(auth_client):
+    outfit_id = upload(auth_client, capture_mode="worn")["outfit_id"]
+    wait_for_terminal(auth_client, outfit_id)
+
+    blocked = auth_client.post("/v1/outfits/{0}/wardrobe".format(outfit_id), json={})
+    assert blocked.status_code == 400
+    assert blocked.json()["error"]["code"] == "not_item_mode"
+
+    detail = auth_client.get("/v1/outfits/{0}".format(outfit_id)).json()
+    assert detail.get("in_wardrobe") is None
+
+
+def test_adding_the_same_outfit_twice_is_idempotent(auth_client):
+    outfit_id = upload(auth_client, capture_mode="item")["outfit_id"]
+    wait_for_terminal(auth_client, outfit_id)
+    _add_fake_garment(outfit_id)
+
+    first = auth_client.post("/v1/outfits/{0}/wardrobe".format(outfit_id), json={})
+    second = auth_client.post("/v1/outfits/{0}/wardrobe".format(outfit_id), json={})
+    assert first.json()["item_id"] == second.json()["item_id"]
+
+    items = auth_client.get("/v1/wardrobe").json()["items"]
+    assert len([i for i in items if i["outfit_id"] == outfit_id]) == 1
+
+
+def test_wardrobe_lists_most_recently_added_first(auth_client):
+    first = upload(auth_client, capture_mode="item")["outfit_id"]
+    wait_for_terminal(auth_client, first)
+    second = upload(auth_client, capture_mode="item")["outfit_id"]
+    wait_for_terminal(auth_client, second)
+    _add_fake_garment(first)
+    _add_fake_garment(second)
+
+    auth_client.post("/v1/outfits/{0}/wardrobe".format(first), json={})
+    auth_client.post("/v1/outfits/{0}/wardrobe".format(second), json={})
+
+    items = auth_client.get("/v1/wardrobe").json()["items"]
+    outfit_ids = [item["outfit_id"] for item in items]
+    assert outfit_ids.index(second) < outfit_ids.index(first)
+
+
+def test_remove_from_wardrobe(auth_client):
+    outfit_id = upload(auth_client, capture_mode="item")["outfit_id"]
+    wait_for_terminal(auth_client, outfit_id)
+    _add_fake_garment(outfit_id)
+    item_id = auth_client.post(
+        "/v1/outfits/{0}/wardrobe".format(outfit_id), json={}
+    ).json()["item_id"]
+
+    removed = auth_client.delete("/v1/wardrobe/{0}".format(item_id))
+    assert removed.status_code == 204
+    assert auth_client.get("/v1/wardrobe").json()["items"] == []
+
+
+def test_cannot_add_someone_elses_outfit_to_wardrobe(client):
+    owner = client.post(
+        "/v1/auth/register",
+        json={"email": "wardrobe-a-{0}@x.com".format(uuid.uuid4().hex[:8]), "password": "a-long-password"},
+    ).json()
+    client.headers.update({"Authorization": "Bearer " + owner["access_token"]})
+    outfit_id = upload(client, capture_mode="item")["outfit_id"]
+    wait_for_terminal(client, outfit_id)
+
+    other = client.post(
+        "/v1/auth/register",
+        json={"email": "wardrobe-b-{0}@x.com".format(uuid.uuid4().hex[:8]), "password": "a-long-password"},
+    ).json()
+    client.headers.update({"Authorization": "Bearer " + other["access_token"]})
+
+    blocked = client.post("/v1/outfits/{0}/wardrobe".format(outfit_id), json={})
+    assert blocked.status_code == 404

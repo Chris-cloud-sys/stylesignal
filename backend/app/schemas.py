@@ -189,6 +189,9 @@ class OutfitDetail(BaseModel):
     # public; omitted (not zeroed) for a private outfit so the client can
     # tell "never shared" apart from "shared, zero likes so far".
     like_count: Optional[int] = None
+    # SPEC+ — wardrobe catalog. Only meaningful for capture_mode="item";
+    # None for a worn scan (nothing to add), True/False once it is.
+    in_wardrobe: Optional[bool] = None
 
 
 class OutfitListItem(BaseModel):
@@ -245,6 +248,28 @@ class InsightsOut(BaseModel):
     most_common_occasion: Optional[str] = None
     worn_count: int = 0
     item_count: int = 0
+
+
+# --- Wardrobe catalog (SPEC+ — see docs/spec-deviations.md) ----------------
+class WardrobeAddRequest(BaseModel):
+    note: Optional[str] = Field(default=None, max_length=120)
+
+
+class WardrobeItemOut(BaseModel):
+    item_id: uuid.UUID
+    outfit_id: uuid.UUID
+    category: str
+    colors: List[ColourOut] = Field(default_factory=list)
+    pattern: str
+    formality: float
+    note: Optional[str] = None
+    thumb_url: Optional[str] = None
+    created_at: datetime
+
+
+class WardrobeListResponse(BaseModel):
+    items: List[WardrobeItemOut]
+    cursor: Optional[str] = None
 
 
 # --- Community feed + ratings (§6.5) --------------------------------------

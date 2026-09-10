@@ -446,6 +446,49 @@ class Follow(Base):
     )
 
 
+class WardrobeItem(Base):
+    """SPEC+ — wardrobe catalog (docs/spec-deviations.md).
+
+    Reverses §2.3's original "no wardrobe to catalogue here on purpose"
+    decision — a deliberate, conscious re-decision, not an oversight fixed.
+    Bootstrapped from "item, not worn" scans specifically, not worn-outfit
+    photos: an item-mode scan is already a clean single-garment photo, so
+    "Add to wardrobe" reuses a capture flow that exists rather than asking
+    for a second, dedicated flat-lay photography ritual — the exact setup
+    friction the original decision was trying to avoid. category/colors/
+    pattern/formality are copied from the source scan's Garment row at
+    add-time (a snapshot, not a live reference) so a later re-read of the
+    same photo under a different occasion can't retroactively change a
+    saved wardrobe entry.
+    """
+
+    __tablename__ = "wardrobe_items"
+    __table_args__ = (
+        UniqueConstraint("outfit_id", name="uq_wardrobe_item_outfit"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=_uuid)
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    # The item-mode scan this was bootstrapped from — also doubles as the
+    # image source (reuses the outfit's own thumb/working image, no
+    # separate wardrobe-image storage).
+    outfit_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid, ForeignKey("outfits.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    category: Mapped[str] = mapped_column(String(16), nullable=False)
+    colors: Mapped[List[Dict[str, Any]]] = mapped_column(
+        JSONB, nullable=False, default=list
+    )
+    pattern: Mapped[str] = mapped_column(String(16), nullable=False, default="solid")
+    formality: Mapped[float] = mapped_column(Float, nullable=False, default=0.5)
+    note: Mapped[Optional[str]] = mapped_column(String(120), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=_utcnow
+    )
+
+
 class ModelVersion(Base):
     """§5.8. Registry for the preference model and feedback engine."""
 

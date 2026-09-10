@@ -12,7 +12,7 @@ import React, { useRef, useState } from 'react';
 import { Image, Pressable, ScrollView, Share, StyleSheet, Text, View } from 'react-native';
 import { captureRef } from 'react-native-view-shot';
 
-import { absoluteMediaUrl, ApiError, rereadOutfit } from '../api/client';
+import { absoluteMediaUrl, addToWardrobe, ApiError, rereadOutfit } from '../api/client';
 import type {
   FailureReason,
   Feedback,
@@ -167,6 +167,8 @@ function Complete({
   const thumb = absoluteMediaUrl(outfit.thumb_url);
   const shareCardRef = useRef<View>(null);
   const [sharing, setSharing] = useState(false);
+  const [inWardrobe, setInWardrobe] = useState(outfit.in_wardrobe ?? false);
+  const [addingToWardrobe, setAddingToWardrobe] = useState(false);
 
   const handleShare = async (): Promise<void> => {
     if (!feedback || sharing) return;
@@ -175,6 +177,21 @@ function Complete({
       await shareFeedbackImage(shareCardRef, feedback);
     } finally {
       setSharing(false);
+    }
+  };
+
+  // SPEC+ — wardrobe catalog (docs/spec-deviations.md). Only offered for an
+  // item-mode read; a worn-outfit photo has no single garment to snapshot.
+  const handleAddToWardrobe = async (): Promise<void> => {
+    if (inWardrobe || addingToWardrobe) return;
+    setAddingToWardrobe(true);
+    try {
+      await addToWardrobe(outfit.outfit_id);
+      setInWardrobe(true);
+    } catch {
+      // Leave the button as-is — the user can retry.
+    } finally {
+      setAddingToWardrobe(false);
     }
   };
 
@@ -216,6 +233,17 @@ function Complete({
             </View>
           ) : null}
         </View>
+      ) : null}
+
+      {outfit.capture_mode === 'item' && typeof outfit.in_wardrobe === 'boolean' ? (
+        <Button
+          variant={inWardrobe ? 'secondary' : 'primary'}
+          label={inWardrobe ? 'Added to wardrobe' : 'Add to wardrobe'}
+          onPress={() => void handleAddToWardrobe()}
+          disabled={inWardrobe}
+          busy={addingToWardrobe}
+          style={styles.wardrobeButton}
+        />
       ) : null}
 
       {feedback ? <Headline feedback={feedback} /> : null}
@@ -598,6 +626,7 @@ const styles = StyleSheet.create({
   topBarLink: { ...type.meta, color: colors.textMuted },
   topBarLikes: { ...type.meta, color: colors.accent },
   stage: { ...type.meta, color: colors.textMuted, marginBottom: space.md },
+  wardrobeButton: { marginBottom: space.lg },
   // §7.8 the hero is a container for the photo AND the scrim-mounted
   // verdict, not the `<Image>` itself — that's what makes the overlay
   // possible.

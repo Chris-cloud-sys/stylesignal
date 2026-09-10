@@ -94,6 +94,8 @@ export interface OutfitDetail {
   /** SPEC+ — likes/favorites. Present only once shared (see docs/spec-
    * deviations.md); absent, not zero, means "never shared". */
   like_count?: number | null;
+  /** SPEC+ — wardrobe catalog. Only meaningful for capture_mode "item". */
+  in_wardrobe?: boolean | null;
 }
 
 export interface OutfitListItem {
@@ -133,6 +135,24 @@ export interface FollowResponse {
 export interface ColourInsight {
   hex: string;
   scan_count: number;
+}
+
+// --- Wardrobe catalog (SPEC+, docs/spec-deviations.md) ---------------------
+export interface WardrobeItem {
+  item_id: string;
+  outfit_id: string;
+  category: string;
+  colors: Colour[];
+  pattern: string;
+  formality: number;
+  note?: string | null;
+  thumb_url?: string | null;
+  created_at: string;
+}
+
+export interface WardrobeListResponse {
+  items: WardrobeItem[];
+  cursor?: string | null;
 }
 
 export interface Insights {

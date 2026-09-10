@@ -24,6 +24,8 @@ import type {
   RatingResponse,
   TokenPair,
   UserProfile,
+  WardrobeItem,
+  WardrobeListResponse,
 } from './types';
 
 const ACCESS_KEY = 'stylesignal.access_token';
@@ -344,6 +346,24 @@ export function unfollowUser(userId: string): Promise<FollowResponse> {
 // --- Personal signal history / style insights (SPEC+, docs/spec-deviations.md)
 export function fetchInsights(): Promise<Insights> {
   return request<Insights>('/v1/insights');
+}
+
+// --- Wardrobe catalog (SPEC+, docs/spec-deviations.md) ---------------------
+export function addToWardrobe(outfitId: string, note?: string | null): Promise<WardrobeItem> {
+  return request<WardrobeItem>(`/v1/outfits/${outfitId}/wardrobe`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ note: note ?? null }),
+  });
+}
+
+export function fetchWardrobe(cursor?: string | null): Promise<WardrobeListResponse> {
+  const query = cursor ? `?limit=20&cursor=${encodeURIComponent(cursor)}` : '?limit=20';
+  return request<WardrobeListResponse>(`/v1/wardrobe${query}`);
+}
+
+export function removeFromWardrobe(itemId: string): Promise<void> {
+  return request<void>(`/v1/wardrobe/${itemId}`, { method: 'DELETE' });
 }
 
 // --- Billing (SPEC+ — native IAP, docs/spec-deviations.md #18) -------------

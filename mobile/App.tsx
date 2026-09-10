@@ -22,10 +22,12 @@ import { FavoritesScreen } from './src/screens/FavoritesScreen';
 import { FeedScreen } from './src/screens/FeedScreen';
 import { ForgotPasswordScreen } from './src/screens/ForgotPasswordScreen';
 import { HistoryScreen } from './src/screens/HistoryScreen';
+import { InsightsScreen } from './src/screens/InsightsScreen';
 import { ProfileScreen } from './src/screens/ProfileScreen';
 import { ResultScreen } from './src/screens/ResultScreen';
 import { SignInScreen } from './src/screens/SignInScreen';
 import { UpgradeScreen } from './src/screens/UpgradeScreen';
+import { UserProfileScreen } from './src/screens/UserProfileScreen';
 import { colors } from './src/theme';
 
 type Screen =
@@ -38,7 +40,9 @@ type Screen =
   | { name: 'feed' }
   | { name: 'profile' }
   | { name: 'result'; outfitId: string }
-  | { name: 'upgrade' };
+  | { name: 'upgrade' }
+  | { name: 'userProfile'; userId: string; from: TabName }
+  | { name: 'insights' };
 
 /** The five tab screens share the persistent bottom bar; result/upgrade/
  * auth screens are full-takeover and hide it. */
@@ -140,13 +144,30 @@ export default function App(): React.ReactElement {
           ) : null}
 
           {screen.name === 'feed' ? (
-            <FeedScreen onRated={() => void refreshQuota()} />
+            <FeedScreen
+              onRated={() => void refreshQuota()}
+              onOpenProfile={(userId) => setScreen({ name: 'userProfile', userId, from: 'feed' })}
+            />
           ) : null}
 
           {screen.name === 'profile' ? (
             <ProfileScreen
               onSignOut={() => void signOut()}
               onOpenUpgrade={() => setScreen({ name: 'upgrade' })}
+              onOpenProfile={(userId) => setScreen({ name: 'userProfile', userId, from: 'profile' })}
+              onOpenInsights={() => setScreen({ name: 'insights' })}
+            />
+          ) : null}
+
+          {screen.name === 'insights' ? (
+            <InsightsScreen onBack={() => setScreen({ name: 'profile' })} />
+          ) : null}
+
+          {screen.name === 'userProfile' ? (
+            <UserProfileScreen
+              userId={screen.userId}
+              onBack={() => setScreen({ name: screen.from } as Screen)}
+              onOpenOutfit={(outfitId) => setScreen({ name: 'result', outfitId })}
             />
           ) : null}
 

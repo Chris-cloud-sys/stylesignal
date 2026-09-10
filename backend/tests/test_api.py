@@ -807,3 +807,199 @@ def test_thumbnail_requires_a_valid_signature(auth_client):
 
     tampered = signed.split("?")[0] + "?token=0.deadbeef"
     assert auth_client.get(tampered).status_code == 403
+
+
+# --- Profiles / follow graph (SPEC+, docs/spec-deviations.md) --------------
+def test_feed_items_carry_the_owners_identity(client):
+    author = client.post(
+        "/v1/auth/register",
+        json={
+            "email": "owner-{0}@x.com".format(uuid.uuid4().hex[:8]),
+            "password": "a-long-password",
+            "display_name": "Author Name",
+        },
+    ).json()
+    client.headers.update({"Authorization": "Bearer " + author["access_token"]})
+    author_id = client.get("/v1/auth/me").json()["user"]["id"]
+    outfit_id = upload(client, is_public="true")["outfit_id"]
+    wait_for_terminal(client, outfit_id)
+
+    viewer = client.post(
+        "/v1/auth/register",
+        json={"email": "viewer-{0}@x.com".format(uuid.uuid4().hex[:8]), "password": "a-long-password"},
+    ).json()
+    client.headers.update({"Authorization": "Bearer " + viewer["access_token"]})
+
+    items = client.get("/v1/feed").json()["items"]
+    row = next(item for item in items if item["outfit_id"] == outfit_id)
+    assert row["owner_id"] == author_id
+    assert row["owner_display_name"] == "Author Name"
+
+
+def test_follow_unfollow_updates_counts_and_is_following(client):
+    author = client.post(
+        "/v1/auth/register",
+        json={"email": "follow-a-{0}@x.com".format(uuid.uuid4().hex[:8]), "password": "a-long-password"},
+    ).json()
+    client.headers.update({"Authorization": "Bearer " + author["access_token"]})
+    author_id = client.get("/v1/auth/me").json()["user"]["id"]
+
+    fan = client.post(
+        "/v1/auth/register",
+        json={"email": "follow-b-{0}@x.com".format(uuid.uuid4().hex[:8]), "password": "a-long-password"},
+    ).json()
+    client.headers.update({"Authorization": "Bearer " + fan["access_token"]})
+
+    followed = client.post("/v1/users/{0}/follow".format(author_id))
+    assert followed.status_code == 201
+    assert followed.json() == {"user_id": author_id, "following": True, "follower_count": 1}
+
+    profile = client.get("/v1/users/{0}/profile".format(author_id)).json()
+    assert profile["is_following"] is True
+    assert profile["follower_count"] == 1
+    assert profile["is_self"] is False
+
+    # Following again is idempotent.
+    again = client.post("/v1/users/{0}/follow".format(author_id))
+    assert again.json()["follower_count"] == 1
+
+    unfollowed = client.delete("/v1/users/{0}/follow".format(author_id))
+    assert unfollowed.status_code == 200
+    assert unfollowed.json() == {"user_id": author_id, "following": False, "follower_count": 0}
+
+
+def test_cannot_follow_yourself(auth_client):
+    me = auth_client.get("/v1/auth/me").json()["user"]["id"]
+    blocked = auth_client.post("/v1/users/{0}/follow".format(me))
+    assert blocked.status_code == 400
+    assert blocked.json()["error"]["code"] == "cannot_follow_yourself"
+
+
+def test_following_a_nonexistent_user_404s(auth_client):
+    blocked = auth_client.post("/v1/users/{0}/follow".format(uuid.uuid4()))
+    assert blocked.status_code == 404
+
+
+def test_profile_only_lists_public_completed_outfits(client):
+    author = client.post(
+        "/v1/auth/register",
+        json={"email": "profile-a-{0}@x.com".format(uuid.uuid4().hex[:8]), "password": "a-long-password"},
+    ).json()
+    client.headers.update({"Authorization": "Bearer " + author["access_token"]})
+    author_id = client.get("/v1/auth/me").json()["user"]["id"]
+    public_outfit = upload(client, is_public="true")["outfit_id"]
+    wait_for_terminal(client, public_outfit)
+    private_outfit = upload(client, is_public="false")["outfit_id"]
+    wait_for_terminal(client, private_outfit)
+
+    viewer = client.post(
+        "/v1/auth/register",
+        json={"email": "profile-b-{0}@x.com".format(uuid.uuid4().hex[:8]), "password": "a-long-password"},
+    ).json()
+    client.headers.update({"Authorization": "Bearer " + viewer["access_token"]})
+
+    profile = client.get("/v1/users/{0}/profile".format(author_id)).json()
+    assert profile["outfit_count"] == 1
+    ids = {item["outfit_id"] for item in profile["outfits"]}
+    assert ids == {public_outfit}
+
+
+def test_own_profile_reports_is_self(auth_client):
+    me = auth_client.get("/v1/auth/me").json()["user"]["id"]
+    profile = auth_client.get("/v1/users/{0}/profile".format(me)).json()
+    assert profile["is_self"] is True
+    assert profile["is_following"] is False
+
+
+# --- Personal signal history / style insights (SPEC+) -----------------------
+def _make_pro(client) -> None:
+    """The free tier's test quota (3/month) is below MIN_SCANS_FOR_INSIGHTS
+    (5) — bump the just-authenticated account to pro so these tests can
+    upload enough scans to reach the ready state."""
+    from app.db import SessionLocal
+    from app.models import User
+
+    user_id = uuid.UUID(client.get("/v1/auth/me").json()["user"]["id"])
+    db = SessionLocal()
+    try:
+        user = db.get(User, user_id)
+        user.plan = "pro"
+        db.commit()
+    finally:
+        db.close()
+
+
+def test_insights_not_ready_before_the_minimum_scan_count(auth_client):
+    for _ in range(3):
+        outfit_id = upload(auth_client)["outfit_id"]
+        wait_for_terminal(auth_client, outfit_id)
+
+    insights = auth_client.get("/v1/insights").json()
+    assert insights["ready"] is False
+    assert insights["scan_count"] == 3
+    assert insights["minimum_scans"] == 5
+    assert insights["average_formality_label"] is None
+    assert insights["top_colours"] == []
+
+
+def test_insights_ready_after_the_minimum_scan_count(auth_client):
+    _make_pro(auth_client)
+    for _ in range(5):
+        outfit_id = upload(auth_client)["outfit_id"]
+        wait_for_terminal(auth_client, outfit_id)
+
+    insights = auth_client.get("/v1/insights").json()
+    assert insights["ready"] is True
+    assert insights["scan_count"] == 5
+    assert insights["worn_count"] + insights["item_count"] == 5
+    # average_formality_label depends on garment detection succeeding on the
+    # synthetic test photo (not guaranteed) — only the type is checked.
+    assert insights["average_formality_label"] is None or isinstance(
+        insights["average_formality_label"], str
+    )
+    assert len(insights["top_colours"]) > 0
+    for colour in insights["top_colours"]:
+        assert colour["hex"].startswith("#")
+        assert colour["scan_count"] >= 1
+
+
+def test_insights_splits_worn_and_item_capture_modes(auth_client):
+    _make_pro(auth_client)
+    for _ in range(3):
+        outfit_id = upload(auth_client, capture_mode="worn")["outfit_id"]
+        wait_for_terminal(auth_client, outfit_id)
+    for _ in range(2):
+        outfit_id = upload(auth_client, capture_mode="item")["outfit_id"]
+        wait_for_terminal(auth_client, outfit_id)
+
+    insights = auth_client.get("/v1/insights").json()
+    assert insights["ready"] is True
+    assert insights["worn_count"] == 3
+    assert insights["item_count"] == 2
+
+
+def test_insights_includes_private_scans(auth_client):
+    # Insights is about the caller's own history, not what's shared — unlike
+    # Favorites/profiles, sharing status is irrelevant here.
+    _make_pro(auth_client)
+    for _ in range(5):
+        outfit_id = upload(auth_client, is_public="false")["outfit_id"]
+        wait_for_terminal(auth_client, outfit_id)
+
+    insights = auth_client.get("/v1/insights").json()
+    assert insights["ready"] is True
+    assert insights["scan_count"] == 5
+
+
+def test_insights_excludes_deleted_scans(auth_client):
+    _make_pro(auth_client)
+    ids = []
+    for _ in range(5):
+        outfit_id = upload(auth_client)["outfit_id"]
+        wait_for_terminal(auth_client, outfit_id)
+        ids.append(outfit_id)
+
+    auth_client.delete("/v1/outfits/{0}".format(ids[0]))
+
+    insights = auth_client.get("/v1/insights").json()
+    assert insights["scan_count"] == 4

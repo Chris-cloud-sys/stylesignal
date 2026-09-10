@@ -18,6 +18,11 @@ from dataclasses import dataclass, field
 from typing import Any, Dict, List, Pattern, Tuple
 
 # Fields of ``outfit_feedback`` (§5.5) that are user-visible prose.
+# NOTE: elevate_suggestion is NOT here — it gets every rule below except
+# RULE_PRESCRIPTION (see the dedicated block in lint_feedback and
+# docs/spec-deviations.md). It is the one deliberate, bounded exception to
+# the no-prescription rule anywhere in this contract; every other field
+# stays fully prescription-free.
 LINTED_FIELDS = (
     "overall_read",
     "color_note",
@@ -46,6 +51,7 @@ WORD_LIMITS = {
     "focal_point": 12,
 }
 QUICK_READ_WORD_LIMIT = 15
+ELEVATE_SUGGESTION_WORD_LIMIT = 14
 
 RULE_EXPLANATIONS = {
     RULE_PRESCRIPTION: (
@@ -180,6 +186,17 @@ _PROPORTION_HEDGE_PATTERNS = _compile(
 
 _RULES: List[Tuple[str, List[Pattern]]] = [
     (RULE_PRESCRIPTION, _PRESCRIPTION_PATTERNS),
+    (RULE_PERSON_EVALUATION, _PERSON_EVALUATION_PATTERNS),
+    (RULE_NUMERIC_SCORE, _NUMERIC_SCORE_PATTERNS),
+    (RULE_NEGATIVE_ABSOLUTE, _NEGATIVE_ABSOLUTE_PATTERNS),
+]
+
+# elevate_suggestion's rule set, deliberately missing RULE_PRESCRIPTION —
+# the whole point of the field is to name one concrete addition or swap, so
+# "a structured blazer would..." can't be flagged as an instruction here the
+# way it would be everywhere else. Still fully bound by the other three: no
+# comment on the wearer, no number, no negative absolute.
+_ELEVATE_SUGGESTION_RULES: List[Tuple[str, List[Pattern]]] = [
     (RULE_PERSON_EVALUATION, _PERSON_EVALUATION_PATTERNS),
     (RULE_NUMERIC_SCORE, _NUMERIC_SCORE_PATTERNS),
     (RULE_NEGATIVE_ABSOLUTE, _NEGATIVE_ABSOLUTE_PATTERNS),
@@ -324,6 +341,19 @@ def lint_feedback(feedback: Dict[str, Any]) -> LintReport:
                     )
                 )
                 break  # one flag is enough to trigger a regenerate
+
+    elevate_suggestion = feedback.get("elevate_suggestion")
+    if isinstance(elevate_suggestion, str) and elevate_suggestion.strip():
+        for rule, patterns in _ELEVATE_SUGGESTION_RULES:
+            for pattern in patterns:
+                for match in pattern.finditer(elevate_suggestion):
+                    violations.append(
+                        Violation(rule=rule, phrase=match.group(0), field="elevate_suggestion")
+                    )
+        violations.extend(
+            _check_word_limit(elevate_suggestion, "elevate_suggestion", ELEVATE_SUGGESTION_WORD_LIMIT)
+        )
+        violations.extend(_check_single_sentence(elevate_suggestion, "elevate_suggestion"))
 
     for index, note in enumerate(feedback.get("garment_notes") or []):
         if isinstance(note, dict):

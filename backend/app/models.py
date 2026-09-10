@@ -285,6 +285,13 @@ class OutfitFeedback(Base):
     signal_clarity: Mapped[Optional[Dict[str, Any]]] = mapped_column(
         JSONB, nullable=True
     )
+    # SPEC+ — a wardrobe-free stand-in for "generate outfit combinations"
+    # (docs/spec-deviations.md). There's no cataloged inventory to combine
+    # items from (deliberate — §2.3), so this stays text, grounded in the
+    # single photo just read, one concrete addition/swap — not a generated
+    # outfit. Same no-score, descriptive-language rules as everything else;
+    # optional because a spare/complete look may have nothing worth adding.
+    elevate_suggestion: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
     # Internal rule/model signals. Never surfaced raw (§7.3 forbids numeric
     # scores in user-facing output).
@@ -410,6 +417,33 @@ class Favorite(Base):
     )
 
     outfit: Mapped[Outfit] = relationship(back_populates="favorites")
+
+
+class Follow(Base):
+    """SPEC+ — community follow graph (docs/spec-deviations.md).
+
+    Gives the community loop an identity beyond an anonymous rating/liking
+    queue: a way to discover and revisit a specific member's public reads,
+    not just whatever the feed's fewest-ratings-first ordering surfaces
+    next. No accept/request step — following is public and immediate,
+    matching the rest of the community loop (public means public).
+    """
+
+    __tablename__ = "follows"
+    __table_args__ = (
+        UniqueConstraint("follower_id", "followee_id", name="uq_follow_follower_followee"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=_uuid)
+    follower_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    followee_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=_utcnow
+    )
 
 
 class ModelVersion(Base):

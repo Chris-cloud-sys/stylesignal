@@ -37,6 +37,8 @@ import { colors, radius, sentenceCase, space, type, weight } from '../theme';
 interface Props {
   /** Lets App.tsx refresh the scans-left pill after an earn. */
   onRated: () => void;
+  /** SPEC+ — opens a member's public profile (docs/spec-deviations.md). */
+  onOpenProfile: (userId: string) => void;
 }
 
 /** Plain-language phrasing per occasion, for the occasion_fit question below
@@ -76,7 +78,7 @@ const DIMENSIONS: Array<{
   },
 ];
 
-export function FeedScreen({ onRated }: Props): React.ReactElement {
+export function FeedScreen({ onRated, onOpenProfile }: Props): React.ReactElement {
   const [items, setItems] = useState<FeedItem[]>([]);
   const [cursor, setCursor] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -151,6 +153,7 @@ export function FeedScreen({ onRated }: Props): React.ReactElement {
           <FeedCard
             item={item}
             onSubmitted={(earned) => handleSubmitted(item.outfit_id, earned)}
+            onOpenProfile={onOpenProfile}
           />
         )}
       />
@@ -161,9 +164,11 @@ export function FeedScreen({ onRated }: Props): React.ReactElement {
 function FeedCard({
   item,
   onSubmitted,
+  onOpenProfile,
 }: {
   item: FeedItem;
   onSubmitted: (scansEarned: number) => void;
+  onOpenProfile: (userId: string) => void;
 }): React.ReactElement {
   const [values, setValues] = useState<Partial<Record<RatingDimension, number>>>({});
   const [submitting, setSubmitting] = useState(false);
@@ -246,6 +251,15 @@ function FeedCard({
       ) : (
         <View style={[styles.cardImage, styles.cardImagePlaceholder]} />
       )}
+
+      <Pressable
+        onPress={() => onOpenProfile(item.owner_id)}
+        style={styles.ownerRow}
+        accessibilityRole="button"
+        accessibilityLabel={`Open ${item.owner_display_name}'s profile`}
+      >
+        <Text style={styles.ownerName}>{item.owner_display_name}</Text>
+      </Pressable>
 
       <View style={styles.cardHead}>
         {item.occasion ? (
@@ -392,6 +406,8 @@ const styles = StyleSheet.create({
     marginBottom: space.sm,
   },
   cardImagePlaceholder: { borderWidth: 1, borderColor: colors.border },
+  ownerRow: { alignSelf: 'flex-start', marginBottom: space.xs },
+  ownerName: { ...type.meta, color: colors.accent, fontWeight: '600' },
   cardHead: {
     flexDirection: 'row',
     alignItems: 'center',

@@ -93,8 +93,13 @@ def get_feed(
             like_count_subq.label("like_count"),
             liked_by_me_subq.label("liked_by_me"),
             favorited_by_me_subq.label("favorited_by_me"),
+            User.display_name.label("owner_display_name"),
+            User.email.label("owner_email"),
         )
         .outerjoin(Rating, Rating.outfit_id == Outfit.id)
+        # Owner is 1:1 with Outfit — unlike Rating/Like above, this join
+        # cannot fan out rows before the GROUP BY.
+        .join(User, User.id == Outfit.user_id)
         .where(
             Outfit.is_public.is_(True),
             Outfit.status == "complete",
@@ -102,7 +107,7 @@ def get_feed(
             Outfit.user_id != user.id,
             Outfit.id.not_in(already_rated),
         )
-        .group_by(Outfit.id)
+        .group_by(Outfit.id, User.id)
         .order_by(rating_count.asc(), Outfit.created_at.desc())
         .limit(limit)
     )
@@ -121,8 +126,10 @@ def get_feed(
             like_count=like_count,
             liked_by_me=bool(liked_by_me),
             favorited_by_me=bool(favorited_by_me),
+            owner_id=outfit.user_id,
+            owner_display_name=(owner_display_name or "").strip() or owner_email.split("@")[0],
         )
-        for outfit, _rating_count, like_count, liked_by_me, favorited_by_me in rows
+        for outfit, _rating_count, like_count, liked_by_me, favorited_by_me, owner_display_name, owner_email in rows
     ]
 
     offset = _decode_offset(cursor) + len(items)

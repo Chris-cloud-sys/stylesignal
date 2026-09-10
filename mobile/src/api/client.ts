@@ -12,7 +12,9 @@ import type {
   ApiErrorBody,
   FavoriteResponse,
   FeedResponse,
+  FollowResponse,
   IapPlatform,
+  Insights,
   LikeResponse,
   Me,
   OutfitDetail,
@@ -21,6 +23,7 @@ import type {
   RatingDimension,
   RatingResponse,
   TokenPair,
+  UserProfile,
 } from './types';
 
 const ACCESS_KEY = 'stylesignal.access_token';
@@ -322,6 +325,25 @@ export function favoriteOutfit(outfitId: string): Promise<FavoriteResponse> {
 
 export function unfavoriteOutfit(outfitId: string): Promise<FavoriteResponse> {
   return request<FavoriteResponse>(`/v1/outfits/${outfitId}/favorites`, { method: 'DELETE' });
+}
+
+// --- Profiles / follow graph (SPEC+, docs/spec-deviations.md) --------------
+export function fetchUserProfile(userId: string, cursor?: string | null): Promise<UserProfile> {
+  const query = cursor ? `?limit=20&cursor=${encodeURIComponent(cursor)}` : '?limit=20';
+  return request<UserProfile>(`/v1/users/${userId}/profile${query}`);
+}
+
+export function followUser(userId: string): Promise<FollowResponse> {
+  return request<FollowResponse>(`/v1/users/${userId}/follow`, { method: 'POST' });
+}
+
+export function unfollowUser(userId: string): Promise<FollowResponse> {
+  return request<FollowResponse>(`/v1/users/${userId}/follow`, { method: 'DELETE' });
+}
+
+// --- Personal signal history / style insights (SPEC+, docs/spec-deviations.md)
+export function fetchInsights(): Promise<Insights> {
+  return request<Insights>('/v1/insights');
 }
 
 // --- Billing (SPEC+ — native IAP, docs/spec-deviations.md #18) -------------

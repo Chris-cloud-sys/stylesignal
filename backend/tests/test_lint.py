@@ -299,3 +299,44 @@ def test_correction_prompt_names_the_offending_phrase():
     # It must ask for a rewrite, not a deletion — the observation is fine, the
     # phrasing is not (§7.5).
     assert "Keep the same" in prompt
+
+
+# --- elevate_suggestion — the one deliberate, bounded exception to rule 1 --
+def test_elevate_suggestion_is_exempt_from_the_prescription_rule():
+    report = lint_feedback(
+        {"elevate_suggestion": "A structured navy blazer would extend the formality range."}
+    )
+    assert RULE_PRESCRIPTION not in report.rules_broken
+
+
+def test_elevate_suggestion_still_forbids_person_evaluation():
+    report = lint_feedback({"elevate_suggestion": "A blazer would look slimming on you."})
+    assert RULE_PERSON_EVALUATION in report.rules_broken
+
+
+def test_elevate_suggestion_still_forbids_numeric_scores():
+    report = lint_feedback({"elevate_suggestion": "A blazer scores a 9 once added."})
+    assert RULE_NUMERIC_SCORE in report.rules_broken
+
+
+def test_elevate_suggestion_still_forbids_negative_absolutes():
+    report = lint_feedback({"elevate_suggestion": "The current shoes are ugly without a swap."})
+    assert RULE_NEGATIVE_ABSOLUTE in report.rules_broken
+
+
+def test_elevate_suggestion_over_fourteen_words_is_rejected():
+    report = lint_feedback(
+        {
+            "elevate_suggestion": (
+                "A tailored charcoal wool overcoat with structured shoulders "
+                "and a nipped waist would round the whole thing out nicely"
+            )
+        }
+    )
+    assert RULE_WORD_LIMIT in report.rules_broken
+
+
+def test_empty_elevate_suggestion_is_not_a_violation():
+    for value in ("", None):
+        report = lint_feedback({"elevate_suggestion": value})
+        assert report.ok

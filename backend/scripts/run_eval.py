@@ -228,6 +228,7 @@ def _prose_from_analysis(analysis: Dict[str, Any], garment_dicts: List[Dict[str,
         "verdict_subtitle": str(analysis.get("verdict_subtitle") or "").strip(),
         "focal_point": str(analysis.get("focal_point") or "").strip() or None,
         "quick_reads": quick_reads[:4],
+        "elevate_suggestion": str(analysis.get("elevate_suggestion") or "").strip() or None,
     }
 
 
@@ -330,6 +331,11 @@ def _render_markdown(results: List[Dict[str, Any]], settings) -> str:
             lines.append("**Quick reads:**")
             for qr in quick_reads:
                 lines.append("- _{0}_: {1}".format(qr.get("dimension", "?"), qr.get("text", "")))
+            lines.append("")
+
+        elevate_suggestion = feedback.get("elevate_suggestion")
+        if elevate_suggestion:
+            lines.append("Elevate: {0}".format(elevate_suggestion))
             lines.append("")
 
         garments = r.get("garments") or []

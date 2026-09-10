@@ -70,6 +70,10 @@ export interface Feedback {
   palette: Colour[];
   focal_point?: string | null;
   quick_reads: QuickRead[];
+  /** SPEC+ — the one deliberate exception to the no-prescription rule: one
+   * concrete addition or swap, grounded in this photo. Null when the look
+   * is already complete with nothing worth naming. */
+  elevate_suggestion?: string | null;
   full_read: FullRead;
 }
 
@@ -104,6 +108,44 @@ export interface OutfitListItem {
 export interface OutfitListResponse {
   items: OutfitListItem[];
   cursor?: string | null;
+}
+
+// --- Profiles / follow graph (SPEC+, docs/spec-deviations.md) --------------
+export interface UserProfile {
+  user_id: string;
+  display_name: string;
+  follower_count: number;
+  following_count: number;
+  outfit_count: number;
+  is_following: boolean;
+  is_self: boolean;
+  outfits: OutfitListItem[];
+  cursor?: string | null;
+}
+
+export interface FollowResponse {
+  user_id: string;
+  following: boolean;
+  follower_count: number;
+}
+
+// --- Personal signal history / style insights (SPEC+, docs/spec-deviations.md)
+export interface ColourInsight {
+  hex: string;
+  scan_count: number;
+}
+
+export interface Insights {
+  ready: boolean;
+  scan_count: number;
+  minimum_scans: number;
+  average_formality_label?: string | null;
+  top_colours: ColourInsight[];
+  occasion_match_strong_rate?: number | null;
+  signal_clarity_strong_rate?: number | null;
+  most_common_occasion?: string | null;
+  worn_count: number;
+  item_count: number;
 }
 
 export interface TokenPair {
@@ -160,6 +202,8 @@ export interface FeedItem {
   like_count: number;
   liked_by_me: boolean;
   favorited_by_me: boolean;
+  owner_id: string;
+  owner_display_name: string;
 }
 
 export interface LikeResponse {

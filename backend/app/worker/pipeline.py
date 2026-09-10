@@ -231,6 +231,7 @@ def _run_stages(db: Session, outfit: Outfit, timings: Dict[str, float]) -> None:
             verdict_subtitle=prose["verdict_subtitle"],
             focal_point=prose.get("focal_point") or None,
             quick_reads=prose.get("quick_reads") or [],
+            elevate_suggestion=prose.get("elevate_suggestion") or None,
             occasion_match=meters.get("occasion_match"),
             signal_clarity=meters.get("signal_clarity"),
             signals=signals,
@@ -421,6 +422,7 @@ def _prose_from_analysis(
     quick_reads = quick_reads[:4]
 
     focal_point = str(analysis.get("focal_point") or "").strip()
+    elevate_suggestion = str(analysis.get("elevate_suggestion") or "").strip()
 
     return {
         "overall_read": str(analysis.get("overall_read") or "").strip(),
@@ -432,6 +434,7 @@ def _prose_from_analysis(
         "verdict_subtitle": str(analysis.get("verdict_subtitle") or "").strip(),
         "focal_point": focal_point or None,
         "quick_reads": quick_reads,
+        "elevate_suggestion": elevate_suggestion or None,
     }
 
 
@@ -521,6 +524,7 @@ def _clone_result(db: Session, outfit: Outfit, source: Outfit) -> None:
             verdict_subtitle=source_feedback.verdict_subtitle,
             focal_point=source_feedback.focal_point,
             quick_reads=source_feedback.quick_reads,
+            elevate_suggestion=source_feedback.elevate_suggestion,
             occasion_match=source_feedback.occasion_match,
             signal_clarity=source_feedback.signal_clarity,
             signals=signals,

@@ -166,6 +166,7 @@ class FeedbackOut(BaseModel):
     palette: List[ColourOut] = Field(default_factory=list)
     focal_point: Optional[str] = None
     quick_reads: List[QuickReadOut] = Field(default_factory=list)
+    elevate_suggestion: Optional[str] = None
     full_read: FullReadOut
 
 
@@ -206,6 +207,46 @@ class OutfitListResponse(BaseModel):
     cursor: Optional[str] = None
 
 
+# --- Profiles / follow graph (SPEC+ — see docs/spec-deviations.md) ---------
+class UserProfileOut(BaseModel):
+    user_id: uuid.UUID
+    display_name: str
+    follower_count: int
+    following_count: int
+    outfit_count: int
+    is_following: bool
+    is_self: bool
+    outfits: List[OutfitListItem]
+    cursor: Optional[str] = None
+
+
+class FollowResponse(BaseModel):
+    user_id: uuid.UUID
+    following: bool
+    follower_count: int
+
+
+# --- Personal signal history / style insights (SPEC+ — see
+# docs/spec-deviations.md). Aggregated entirely from signals already
+# computed per scan; no new cataloguing of what the caller owns.
+class ColourInsight(BaseModel):
+    hex: str
+    scan_count: int
+
+
+class InsightsOut(BaseModel):
+    ready: bool
+    scan_count: int
+    minimum_scans: int
+    average_formality_label: Optional[str] = None
+    top_colours: List[ColourInsight] = Field(default_factory=list)
+    occasion_match_strong_rate: Optional[float] = None
+    signal_clarity_strong_rate: Optional[float] = None
+    most_common_occasion: Optional[str] = None
+    worn_count: int = 0
+    item_count: int = 0
+
+
 # --- Community feed + ratings (§6.5) --------------------------------------
 class FeedItem(BaseModel):
     outfit_id: uuid.UUID
@@ -214,6 +255,8 @@ class FeedItem(BaseModel):
     like_count: int = 0
     liked_by_me: bool = False
     favorited_by_me: bool = False
+    owner_id: uuid.UUID
+    owner_display_name: str
 
 
 class FeedResponse(BaseModel):

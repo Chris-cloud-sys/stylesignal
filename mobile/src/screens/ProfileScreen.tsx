@@ -2,7 +2,7 @@
 import React, { useEffect, useState } from 'react';
 import { ActivityIndicator, StyleSheet, Switch, Text, View } from 'react-native';
 
-import { fetchMe, updateSharingDefault } from '../api/client';
+import { fetchMe, fetchUserProfile, updateSharingDefault } from '../api/client';
 import type { Me } from '../api/types';
 import { Button, SectionLabel } from '../components/primitives';
 import { colors, space, type } from '../theme';
@@ -10,18 +10,40 @@ import { colors, space, type } from '../theme';
 interface Props {
   onSignOut: () => void;
   onOpenUpgrade: () => void;
+  /** SPEC+ — view your own profile the way another member sees it. */
+  onOpenProfile: (userId: string) => void;
+  /** SPEC+ — personal signal history (docs/spec-deviations.md). */
+  onOpenInsights: () => void;
 }
 
-export function ProfileScreen({ onSignOut, onOpenUpgrade }: Props): React.ReactElement {
+export function ProfileScreen({
+  onSignOut,
+  onOpenUpgrade,
+  onOpenProfile,
+  onOpenInsights,
+}: Props): React.ReactElement {
   const [me, setMe] = useState<Me | null>(null);
   const [loading, setLoading] = useState(true);
   const [sharingBusy, setSharingBusy] = useState(false);
+  const [followStats, setFollowStats] = useState<{
+    follower_count: number;
+    following_count: number;
+  } | null>(null);
 
   useEffect(() => {
     let cancelled = false;
     void fetchMe()
       .then((result) => {
-        if (!cancelled) setMe(result);
+        if (cancelled) return;
+        setMe(result);
+        void fetchUserProfile(result.user.id).then((profile) => {
+          if (!cancelled) {
+            setFollowStats({
+              follower_count: profile.follower_count,
+              following_count: profile.following_count,
+            });
+          }
+        });
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -65,6 +87,14 @@ export function ProfileScreen({ onSignOut, onOpenUpgrade }: Props): React.ReactE
               <Text style={styles.meta}>
                 {me.user.plan === 'pro' ? 'Pro' : 'Free'} plan
               </Text>
+              {followStats ? (
+                <Button
+                  variant="quiet"
+                  label={`${followStats.follower_count} followers · ${followStats.following_count} following`}
+                  onPress={() => onOpenProfile(me.user.id)}
+                  style={styles.followStatsButton}
+                />
+              ) : null}
             </View>
           ) : null}
 
@@ -109,6 +139,13 @@ export function ProfileScreen({ onSignOut, onOpenUpgrade }: Props): React.ReactE
           ) : null}
 
           <Button
+            variant="secondary"
+            label="Your style, so far"
+            onPress={onOpenInsights}
+            style={styles.insightsButton}
+          />
+
+          <Button
             variant="quiet"
             label="Sign out"
             onPress={onSignOut}
@@ -134,8 +171,10 @@ const styles = StyleSheet.create({
   email: { ...type.bodyMedium, color: colors.text, marginTop: space.xs },
   meta: { ...type.body, color: colors.textMuted, marginTop: space.xs },
   upgradeButton: { marginTop: space.md, alignSelf: 'flex-start' },
+  followStatsButton: { marginTop: space.sm, alignSelf: 'flex-start', paddingHorizontal: 0 },
   sharingRow: { flexDirection: 'row', alignItems: 'center' },
   sharingCopy: { flex: 1, paddingRight: space.md },
   sharingTitle: { ...type.bodyMedium, color: colors.text },
+  insightsButton: { marginTop: space.lg },
   signOut: { marginTop: space.md },
 });

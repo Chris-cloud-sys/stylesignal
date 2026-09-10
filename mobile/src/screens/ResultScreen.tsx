@@ -5,6 +5,7 @@
  * retry). Nothing on this screen colour-codes a verdict — §2.6 forbids it, and
  * the feedback is language, not a grade.
  */
+import { Ionicons } from '@expo/vector-icons';
 import { File, Paths } from 'expo-file-system';
 import * as Sharing from 'expo-sharing';
 import React, { useRef, useState } from 'react';
@@ -220,6 +221,9 @@ function Complete({
       {feedback ? <Headline feedback={feedback} /> : null}
       {feedback && feedback.quick_reads.length > 0 ? (
         <QuickReads items={feedback.quick_reads} garments={outfit.garments ?? []} />
+      ) : null}
+      {feedback && feedback.elevate_suggestion ? (
+        <ElevateSuggestion text={feedback.elevate_suggestion} />
       ) : null}
 
       {feedback ? (
@@ -440,6 +444,25 @@ function Headline({ feedback }: { feedback: Feedback }): React.ReactElement {
   );
 }
 
+// --- Elevate suggestion (SPEC+) ----------------------------------------------
+// The one deliberate, bounded exception to "descriptive, not prescriptive"
+// (docs/spec-deviations.md) — kept visually separate from the core read
+// (its own box, its own label) rather than folded into Zone 1/2, so the
+// no-prescription promise still reads as true for everything above it.
+function ElevateSuggestion({ text }: { text: string }): React.ReactElement {
+  return (
+    <View style={styles.elevateBox}>
+      <View style={styles.elevateIcon}>
+        <Ionicons name="sparkles-outline" size={16} color={colors.accent} />
+      </View>
+      <View style={styles.elevateCopy}>
+        <Text style={styles.elevateLabel}>One idea, if you want it</Text>
+        <Text style={styles.elevateText}>{text}</Text>
+      </View>
+    </View>
+  );
+}
+
 // --- Zone 2: quick reads (§7.7) ----------------------------------------------
 function QuickReads({
   items,
@@ -650,6 +673,27 @@ const styles = StyleSheet.create({
   },
   focalPointLabel: { ...type.meta, color: colors.textMuted },
   focalPointText: { ...type.meta, color: colors.text, fontWeight: weight.medium, flexShrink: 1 },
+
+  // Deliberately set apart from Headline/QuickReads (its own bordered box,
+  // amber-tinted, not plain surface) — this is the one field that carries a
+  // suggestion, and it should read as visually optional/secondary, not as
+  // part of the core descriptive read above it.
+  elevateBox: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: space.sm,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: '#FAF2E1',
+    borderRadius: radius.md,
+    paddingHorizontal: space.md,
+    paddingVertical: space.sm,
+    marginTop: space.md,
+  },
+  elevateIcon: { marginTop: 2 },
+  elevateCopy: { flex: 1 },
+  elevateLabel: { ...type.meta, color: colors.textMuted, marginBottom: 2 },
+  elevateText: { ...type.meta, color: colors.text, fontWeight: weight.medium },
 
   // --- §7.7 Zone 2: quick reads ---
   quickReads: { gap: space.lg, marginBottom: space.lg },

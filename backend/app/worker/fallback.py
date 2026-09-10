@@ -180,6 +180,10 @@ def build_fallback_feedback(
         "quick_reads": _quick_reads(
             colour, formality, proportion, occasion, occasion_match
         ),
+        # elevate_suggestion needs a concrete, photo-grounded addition —
+        # exactly what a template can't produce. Omitted here rather than
+        # faked; the field is optional for this reason.
+        "elevate_suggestion": None,
     }
 
 

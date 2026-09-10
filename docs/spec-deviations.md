@@ -978,3 +978,77 @@ were swapped for real line icons from that set (`eye-outline`,
 `color-palette-outline`, `scale-balance`, `dots-grid`, `ruler`) inside the
 same amber-tinted badge, now a rounded square (`radius.md`) rather than a
 circle, matching the reference the icons were designed against.
+
+---
+
+## 30. Three competitor-driven features: elevate_suggestion, follow graph, insights
+
+Grew out of a strategic exercise: asked for StyleSignal's strengths,
+weaknesses, and biggest unexplored opportunity against real outfit-rating
+and wardrobe-app competitors, then asked for the buildable subset
+implemented (3 of 8 items — the other 5 either aren't code, e.g. a human
+stylist marketplace, or directly reverse the deliberate no-wardrobe-
+cataloguing decision in §2.3 and needed a separate conscious call, which
+wasn't made).
+
+**`elevate_suggestion` — a wardrobe-free stand-in for "generate outfit
+combinations."** Competitors that suggest combinations do it from a
+cataloged wardrobe; StyleSignal has none, on purpose. The compromise: one
+optional, photo-grounded field — "a structured navy blazer would extend
+the formality range" — fourteen words or fewer, one sentence, empty when
+there's nothing worth naming. This is the **one deliberate, bounded
+exception to rule 1 (no prescription)** anywhere in the contract, and it's
+fenced off carefully so it doesn't erode the rule everywhere else:
+- `lint.py` gives it its own rule set (`_ELEVATE_SUGGESTION_RULES`) —
+  every general rule except `RULE_PRESCRIPTION` — rather than adding it to
+  `LINTED_FIELDS`, which would apply all four rules including the one
+  that's supposed to not apply here.
+- `vlm.py`'s system prompt names the exception explicitly, right after
+  the rules it's excepted from, so the model sees the boundary rather
+  than inferring it.
+- The fallback engine (`fallback.py`) never populates it — a template
+  can't produce a photo-grounded suggestion, so it's honestly omitted
+  rather than faked.
+- Rendered in its own bordered, amber-tinted box on `ResultScreen`
+  (`ElevateSuggestion`), visually separate from Zone 1/2 — so the
+  no-prescription promise still reads as true for the read above it.
+
+**Follow graph — profiles as an identity for the community loop, not
+just an anonymous rating queue.** New `Follow` model (`follower_id`,
+`followee_id`, unique pair), `GET/POST/DELETE /v1/users/{id}/...`
+(`users.py`, new router). One thing this required upstream: `FeedItem`
+never carried who posted an outfit — `owner_id`/`owner_display_name` are
+new fields on it, sourced from a plain join to `User` in `get_feed`
+(safe to join directly, unlike `Rating`/`Like`, because an outfit has
+exactly one owner — no row fan-out before the existing `GROUP BY`). A
+profile is deliberately the same "public face" view for everyone,
+including the account's own owner — private/in-progress scans stay in
+History; `/profile` only ever lists public, complete, non-deleted
+outfits, even for `is_self`.
+
+**Personal signal history — the "opportunity" item, and the one that
+actually answers the no-wardrobe weakness on its own terms.**
+`GET /v1/insights` (`app/insights.py`) aggregates over a caller's most
+recent 50 completed scans: dominant colour per scan (most-common wins),
+mean formality translated to a label, the two §7.7 meters' "strong" rate,
+most-tagged occasion, worn/item split. Two things worth being explicit
+about:
+- **No new columns, no new table.** Everything read here was already
+  being computed and persisted per scan (`OutfitFeedback.signals`,
+  `.occasion_match`, `.signal_clarity`) and then never looked at again.
+  This is a read path, not a new tracking mechanism — it does not become
+  a wardrobe catalogue by another name.
+- **Cold-start guard.** Below `MIN_SCANS_FOR_INSIGHTS` (5), the endpoint
+  returns `ready: false` with just a count rather than a pattern claim
+  built from one or two photos — same reasoning as `compute_meters`
+  returning `None` rather than guessing.
+- The mobile screen (`InsightsScreen`) translates the two meter
+  strong-rates into words ("most of your reads...", "a few of your
+  reads...") rather than showing a raw percentage — matching the
+  Meter component's own "level, not score" precedent (§2.6) even though
+  this is a stats surface, not a single-outfit verdict.
+
+All three needed a production schema change applied directly (no
+Alembic, per `app/db.py`'s `init_db` docstring): `outfit_feedback.
+elevate_suggestion` (nullable text) and the new `follows` table.
+Insights needed none — it's pure aggregation over existing columns.

@@ -181,6 +181,15 @@ ANALYSIS_SCHEMA = {
                 "additionalProperties": False,
             },
         },
+        "elevate_suggestion": {
+            "type": "string",
+            "description": (
+                "Fourteen words or fewer, one concrete addition or swap "
+                "grounded in this photo — the one deliberate exception to "
+                "the no-prescription rule. Empty string if the look is "
+                "already complete with nothing worth naming."
+            ),
+        },
     },
     "required": [
         "person_present",
@@ -194,6 +203,7 @@ ANALYSIS_SCHEMA = {
         "verdict_subtitle",
         "focal_point",
         "quick_reads",
+        "elevate_suggestion",
     ],
     "additionalProperties": False,
 }
@@ -305,6 +315,19 @@ overall_read does not. Second, do not make a global "this all matches" or \
 as a separate signal you do not see, so a global claim from you risks \
 contradicting it. Your job in these four fields is to name specific, visible \
 things, not to summarise the whole look into a verdict on top of a verdict.
+
+# The one exception: elevate_suggestion
+Rule 1 (no prescription) governs every field above without exception. \
+elevate_suggestion is the sole deliberate carve-out, and it stays narrow: \
+one concrete addition or swap, grounded in what is actually visible, framed \
+as an opportunity rather than an instruction — "a structured jacket in navy \
+would extend the formality range upward" rather than "you should add a \
+blazer" or "try a blazer instead". Fourteen words or fewer, exactly one \
+sentence. It still obeys rules 2 through 4 — nothing about the wearer, no \
+numbers, no negative absolutes about the current look while you describe \
+the addition. If the look is already complete and nothing is worth adding \
+or swapping, return an empty string; do not manufacture a suggestion to \
+fill the field.
 """
 
 

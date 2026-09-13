@@ -1,10 +1,11 @@
 /** Profile — account info, quota, sharing default, and sign out (moved off Home). */
+import * as ImagePicker from 'expo-image-picker';
 import React, { useEffect, useState } from 'react';
-import { ActivityIndicator, StyleSheet, Switch, Text, View } from 'react-native';
+import { ActivityIndicator, Alert, StyleSheet, Switch, Text, View } from 'react-native';
 
-import { fetchMe, fetchUserProfile, updateSharingDefault } from '../api/client';
+import { fetchMe, fetchUserProfile, removeAvatar, updateSharingDefault, uploadAvatar } from '../api/client';
 import type { Me } from '../api/types';
-import { Button, SectionLabel } from '../components/primitives';
+import { Avatar, Button, SectionLabel } from '../components/primitives';
 import { colors, space, type } from '../theme';
 
 interface Props {
@@ -28,6 +29,7 @@ export function ProfileScreen({
   const [me, setMe] = useState<Me | null>(null);
   const [loading, setLoading] = useState(true);
   const [sharingBusy, setSharingBusy] = useState(false);
+  const [avatarBusy, setAvatarBusy] = useState(false);
   const [followStats, setFollowStats] = useState<{
     follower_count: number;
     following_count: number;
@@ -73,6 +75,47 @@ export function ProfileScreen({
     }
   };
 
+  const changeAvatar = async (): Promise<void> => {
+    if (avatarBusy) return;
+    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!permission.granted) {
+      Alert.alert('Permission needed', 'StyleSignal needs photo access to set a profile picture.');
+      return;
+    }
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      allowsEditing: true,
+      aspect: [1, 1],
+      quality: 0.9,
+    });
+    if (result.canceled || result.assets.length === 0) return;
+    const asset = result.assets[0];
+    if (!asset) return;
+
+    setAvatarBusy(true);
+    try {
+      const updated = await uploadAvatar(asset.uri);
+      setMe(updated);
+    } catch {
+      Alert.alert('Could not update your profile picture', 'Try again in a moment.');
+    } finally {
+      setAvatarBusy(false);
+    }
+  };
+
+  const clearAvatar = async (): Promise<void> => {
+    if (avatarBusy) return;
+    setAvatarBusy(true);
+    try {
+      const updated = await removeAvatar();
+      setMe(updated);
+    } catch {
+      Alert.alert('Could not remove your profile picture', 'Try again in a moment.');
+    } finally {
+      setAvatarBusy(false);
+    }
+  };
+
   return (
     <View style={styles.flex}>
       <View style={styles.header}>
@@ -86,6 +129,31 @@ export function ProfileScreen({
           {me ? (
             <View style={styles.block}>
               <SectionLabel>Account</SectionLabel>
+              <View style={styles.avatarRow}>
+                <Avatar name={me.user.display_name || me.user.email} uri={me.user.avatar_url} size={64} />
+                <View style={styles.avatarActions}>
+                  {avatarBusy ? (
+                    <ActivityIndicator color={colors.textMuted} />
+                  ) : (
+                    <>
+                      <Button
+                        variant="quiet"
+                        label={me.user.avatar_url ? 'Change photo' : 'Add a photo'}
+                        onPress={() => void changeAvatar()}
+                        style={styles.avatarActionButton}
+                      />
+                      {me.user.avatar_url ? (
+                        <Button
+                          variant="quiet"
+                          label="Remove"
+                          onPress={() => void clearAvatar()}
+                          style={styles.avatarActionButton}
+                        />
+                      ) : null}
+                    </>
+                  )}
+                </View>
+              </View>
               <Text style={styles.email}>{me.user.email}</Text>
               <Text style={styles.meta}>
                 {me.user.plan === 'pro' ? 'Pro' : 'Free'} plan
@@ -178,6 +246,9 @@ const styles = StyleSheet.create({
   spinner: { marginTop: space.xl },
   body: { paddingHorizontal: space.lg },
   block: { marginBottom: space.lg },
+  avatarRow: { flexDirection: 'row', alignItems: 'center', gap: space.md, marginTop: space.sm },
+  avatarActions: { flexDirection: 'row' },
+  avatarActionButton: { paddingHorizontal: 0, marginRight: space.md },
   email: { ...type.bodyMedium, color: colors.text, marginTop: space.xs },
   meta: { ...type.body, color: colors.textMuted, marginTop: space.xs },
   upgradeButton: { marginTop: space.md, alignSelf: 'flex-start' },

@@ -139,6 +139,12 @@ class User(Base):
         Boolean, nullable=False, default=True, server_default="true"
     )
 
+    # SPEC+ — profile picture (docs/spec-deviations.md). Optional, offered
+    # right after registration and editable later from Profile. Storage key
+    # only — same "derive the key, don't store a URL" pattern as Outfit's
+    # thumb_key/original_key.
+    avatar_key: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
     tenant: Mapped[Optional[Tenant]] = relationship(back_populates="users")
     outfits: Mapped[List["Outfit"]] = relationship(
         back_populates="user", cascade="all, delete-orphan"

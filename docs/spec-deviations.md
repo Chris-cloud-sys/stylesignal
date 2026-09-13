@@ -1189,3 +1189,47 @@ feed rail's follow badge — no profile-photo system exists), used both
 per-commenter and next to the composer for the caller's own comment.
 The sheet's header shows the live total count and an explicit "X" close
 button, replacing #32's tap-the-backdrop-only dismissal.
+
+---
+
+## 34. Real profile pictures, and comments/favorites on your own read
+
+Three separate small features shipped together.
+
+**Profile pictures.** `User.avatar_key` (same "store the key, sign the
+URL on read" pattern as `Outfit.thumb_key`), offered once right after a
+fresh registration — never on a login, since `SignInScreen.onSignedIn`
+now carries a `justRegistered` flag — via a new skippable
+`AddProfilePictureScreen`, and editable anytime after from Profile
+("Change photo" / "Remove"). `POST/DELETE /v1/auth/me/avatar` reuse
+`preprocess.py`'s own decode/resize/encode (`_open_and_normalise`,
+`_fit`, `_encode_jpeg`) rather than duplicating its decompression-bomb
+guard and EXIF handling for a second image-upload path. Every place an
+avatar could already render gained the real picture behind the same
+fallback: `UserOut.avatar_url`, `FeedItem.owner_avatar_url`,
+`CommentOut.author_avatar_url`, `UserProfileOut.avatar_url`. The
+letter-badge fallback from #32/#33 didn't go away — it's now genuinely a
+fallback (no picture uploaded yet), not the only option, via a new
+shared `Avatar` primitive that every one of those surfaces now calls
+instead of each hand-rolling its own badge.
+
+**Comments and favorites now reachable from your own read, not just the
+feed.** Real gap, found by asking "why don't I see the rail on History":
+the vertical rail (#32) only ever lived on Community feed cards, and
+ResultScreen (History → tap outfit) had no way to see comments left on
+your own shared outfit, or to favorite it. Both actions were already
+backend-legal for an owner (comments always allowed it; favorites since
+#29) — nothing there needed to change, only that ResultScreen's top bar
+never called either. It now shows a comment icon (opens the same
+`CommentSheet` used in Community) and a favorite/bookmark toggle
+alongside the existing owner-only like *count* (never a like toggle —
+you still can't like your own outfit). `OutfitDetail` gained
+`favorited_by_me` and `comment_count`, populated in `get_outfit`
+alongside the existing owner-only `like_count`.
+
+**Not fixed: a reported History-tap crash.** Investigated live via
+`adb logcat` the same way #7/#26/#27/#28 were — cleared the log, asked
+for a fresh reproduction, and it didn't recur. No log evidence, so
+nothing was changed to address it. If it comes back, the ask is the
+same as every other crash in this log: reproduce it while logcat is
+actively watching, not after the fact.

@@ -17,6 +17,7 @@ import {
 import { clearSession, fetchMe, loadStoredSession } from './src/api/client';
 import type { Quota } from './src/api/types';
 import { TabBar, type TabName } from './src/components/TabBar';
+import { AddProfilePictureScreen } from './src/screens/AddProfilePictureScreen';
 import { CaptureScreen } from './src/screens/CaptureScreen';
 import { FavoritesScreen } from './src/screens/FavoritesScreen';
 import { FeedScreen } from './src/screens/FeedScreen';
@@ -35,6 +36,7 @@ type Screen =
   | { name: 'loading' }
   | { name: 'signIn' }
   | { name: 'forgotPassword' }
+  | { name: 'addProfilePicture' }
   | { name: 'capture' }
   | { name: 'favorites' }
   | { name: 'history' }
@@ -106,13 +108,19 @@ export default function App(): React.ReactElement {
 
           {screen.name === 'signIn' ? (
             <SignInScreen
-              onSignedIn={() => void enterApp()}
+              onSignedIn={(justRegistered) =>
+                justRegistered ? setScreen({ name: 'addProfilePicture' }) : void enterApp()
+              }
               onForgotPassword={() => setScreen({ name: 'forgotPassword' })}
             />
           ) : null}
 
           {screen.name === 'forgotPassword' ? (
             <ForgotPasswordScreen onDone={() => setScreen({ name: 'signIn' })} />
+          ) : null}
+
+          {screen.name === 'addProfilePicture' ? (
+            <AddProfilePictureScreen onDone={() => void enterApp()} />
           ) : null}
 
           {screen.name === 'capture' ? (

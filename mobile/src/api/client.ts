@@ -198,6 +198,25 @@ export function fetchMe(): Promise<Me> {
   return request<Me>('/v1/auth/me');
 }
 
+/** Profile picture — offered once right after registration (skippable) and
+ * editable later from Profile. */
+export function uploadAvatar(uri: string): Promise<Me> {
+  const form = new FormData();
+  form.append('image', {
+    uri,
+    name: 'avatar.jpg',
+    type: 'image/jpeg',
+  } as unknown as Blob);
+  return request<Me>('/v1/auth/me/avatar', {
+    method: 'POST',
+    body: form as unknown as BodyInit,
+  });
+}
+
+export function removeAvatar(): Promise<Me> {
+  return request<Me>('/v1/auth/me/avatar', { method: 'DELETE' });
+}
+
 /** Profile-level "share for community feedback" default (replaces the old
  * per-scan toggle, which reset to off after every submit). */
 export function updateSharingDefault(defaultSharePublic: boolean): Promise<Me> {

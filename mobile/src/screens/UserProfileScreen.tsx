@@ -13,7 +13,7 @@ import {
 
 import { absoluteMediaUrl, fetchUserProfile, followUser, unfollowUser } from '../api/client';
 import type { OutfitListItem, UserProfile } from '../api/types';
-import { Button } from '../components/primitives';
+import { Avatar, Button } from '../components/primitives';
 import { colors, radius, sentenceCase, space, type } from '../theme';
 
 interface Props {
@@ -112,7 +112,10 @@ export function UserProfileScreen({ userId, onBack, onOpenOutfit }: Props): Reac
 
       {profile ? (
         <View style={styles.profileHead}>
-          <Text style={styles.title}>{profile.display_name}</Text>
+          <View style={styles.profileHeadRow}>
+            <Avatar name={profile.display_name} uri={profile.avatar_url} size={56} />
+            <Text style={styles.title}>{profile.display_name}</Text>
+          </View>
           <View style={styles.statsRow}>
             <Stat label="Reads" value={profile.outfit_count} />
             <Stat label="Followers" value={profile.follower_count} />
@@ -204,6 +207,7 @@ const styles = StyleSheet.create({
     borderBottomColor: colors.border,
   },
   title: { ...type.title, color: colors.text },
+  profileHeadRow: { flexDirection: 'row', alignItems: 'center', gap: space.md },
   statsRow: { flexDirection: 'row', gap: space.xl, marginTop: space.md },
   stat: { alignItems: 'flex-start' },
   statValue: { ...type.bodyMedium, color: colors.text },

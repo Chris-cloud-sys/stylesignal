@@ -93,6 +93,7 @@ def get_user_profile(
     return UserProfileOut(
         user_id=target.id,
         display_name=_display_name(target),
+        avatar_url=storage.signed_url(target.avatar_key) if target.avatar_key else None,
         follower_count=_follower_count(db, user_id),
         following_count=following_count,
         outfit_count=outfit_count,

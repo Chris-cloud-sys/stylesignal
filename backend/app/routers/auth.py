@@ -4,7 +4,7 @@ Short-lived access token plus a refresh token, both JWT bearer.
 """
 from datetime import datetime, timedelta, timezone
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, File, UploadFile, status
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
@@ -36,8 +36,29 @@ from ..security import (
     verify_password,
     verify_reset_code,
 )
+from ..storage import get_storage
+from ..worker.preprocess import UndecodableImage, _encode_jpeg, _fit, _open_and_normalise
 
 router = APIRouter(prefix="/v1/auth", tags=["auth"])
+
+AVATAR_ALLOWED_TYPES = {"image/jpeg", "image/jpg", "image/png", "image/heic", "image/heif", "image/webp"}
+AVATAR_MAX_UPLOAD_BYTES = 8 * 1024 * 1024
+AVATAR_LONGEST_EDGE = 512
+AVATAR_JPEG_QUALITY = 85
+
+
+def _user_out(user: User) -> UserOut:
+    avatar_url = get_storage().signed_url(user.avatar_key) if user.avatar_key else None
+    return UserOut(
+        id=user.id,
+        email=user.email,
+        display_name=user.display_name,
+        plan=user.plan,
+        is_stylist=user.is_stylist,
+        created_at=user.created_at,
+        default_share_public=user.default_share_public,
+        avatar_url=avatar_url,
+    )
 
 PASSWORD_RESET_CODE_TTL_MINUTES = 15
 PASSWORD_RESET_MAX_ATTEMPTS = 5
@@ -112,7 +133,7 @@ def refresh_tokens(
 
 @router.get("/me", response_model=MeResponse)
 def me(user: User = Depends(get_current_user)) -> MeResponse:
-    return MeResponse(user=UserOut.model_validate(user), quota=quota_out(user))
+    return MeResponse(user=_user_out(user), quota=quota_out(user))
 
 
 @router.patch("/me", response_model=MeResponse)
@@ -124,7 +145,63 @@ def update_me(
     user.default_share_public = payload.default_share_public
     db.commit()
     db.refresh(user)
-    return MeResponse(user=UserOut.model_validate(user), quota=quota_out(user))
+    return MeResponse(user=_user_out(user), quota=quota_out(user))
+
+
+# --- Profile picture (SPEC+ — see docs/spec-deviations.md) ------------------
+# Offered right after registration (skippable) and editable later from
+# Profile. Reuses preprocess.py's own decode/resize/encode rather than
+# duplicating the decompression-bomb guard and EXIF handling it already does
+# for outfit photos.
+@router.post("/me/avatar", response_model=MeResponse)
+def upload_avatar(
+    image: UploadFile = File(...),
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> MeResponse:
+    content_type = (image.content_type or "").lower().split(";")[0].strip()
+    if content_type not in AVATAR_ALLOWED_TYPES:
+        raise bad_request(
+            "unsupported_media_type",
+            "Upload a JPEG, PNG, WebP or HEIC image.",
+            {"received": content_type or "unknown"},
+        )
+
+    data = image.file.read(AVATAR_MAX_UPLOAD_BYTES + 1)
+    if not data:
+        raise bad_request("empty_upload", "The uploaded file was empty.")
+    if len(data) > AVATAR_MAX_UPLOAD_BYTES:
+        raise APIError(
+            status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            "payload_too_large",
+            "Profile pictures must be under {0} MB.".format(AVATAR_MAX_UPLOAD_BYTES // (1024 * 1024)),
+        )
+
+    try:
+        normalised = _open_and_normalise(data)
+    except UndecodableImage as exc:
+        raise bad_request("undecodable_image", str(exc)) from exc
+    fitted = _fit(normalised, AVATAR_LONGEST_EDGE)
+    jpeg_bytes = _encode_jpeg(fitted, AVATAR_JPEG_QUALITY)
+
+    avatar_key = "avatars/{0}.jpg".format(user.id)
+    get_storage().put(avatar_key, jpeg_bytes, "image/jpeg")
+    user.avatar_key = avatar_key
+    db.commit()
+    db.refresh(user)
+
+    return MeResponse(user=_user_out(user), quota=quota_out(user))
+
+
+@router.delete("/me/avatar", response_model=MeResponse)
+def remove_avatar(
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> MeResponse:
+    user.avatar_key = None
+    db.commit()
+    db.refresh(user)
+    return MeResponse(user=_user_out(user), quota=quota_out(user))
 
 
 # --- Password reset (SPEC+ — see docs/spec-deviations.md) ------------------

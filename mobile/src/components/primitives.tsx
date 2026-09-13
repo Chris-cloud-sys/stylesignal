@@ -8,6 +8,7 @@ import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import React, { useState } from 'react';
 import {
   ActivityIndicator,
+  Image,
   Pressable,
   StyleSheet,
   Text,
@@ -17,6 +18,37 @@ import {
 } from 'react-native';
 
 import { colors, radius, sentenceCase, space, type, weight } from '../theme';
+
+// --- Avatar ------------------------------------------------------------
+// No profile-photo system before this — a first-letter badge is the
+// fallback everywhere an avatar renders (feed rail, comments, profiles)
+// when the account has no uploaded picture.
+export function Avatar({
+  name,
+  uri,
+  size = 32,
+}: {
+  name: string;
+  uri?: string | null;
+  size?: number;
+}): React.ReactElement {
+  const dimension = { width: size, height: size, borderRadius: size / 2 };
+  if (uri) {
+    return <Image source={{ uri }} style={dimension} />;
+  }
+  return (
+    <View style={[styles_avatar.badge, dimension]}>
+      <Text style={[styles_avatar.letter, { fontSize: size * 0.42 }]}>
+        {name.charAt(0).toUpperCase()}
+      </Text>
+    </View>
+  );
+}
+
+const styles_avatar = StyleSheet.create({
+  badge: { backgroundColor: colors.accent, alignItems: 'center', justifyContent: 'center' },
+  letter: { color: colors.background, fontWeight: weight.medium },
+});
 
 // --- Button ----------------------------------------------------------------
 interface ButtonProps {

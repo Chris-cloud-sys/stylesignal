@@ -21,7 +21,7 @@ from ..db import get_db
 from ..deps import get_current_user
 from ..errors import APIError, bad_request, not_found
 from ..jobs import get_queue
-from ..models import Favorite, Like, Outfit, User, WardrobeItem
+from ..models import Comment, Favorite, Like, Outfit, User, WardrobeItem
 from ..quota import consume_scan, refund_scan
 from ..schemas import (
     ColourOut,
@@ -469,6 +469,18 @@ def get_outfit(
     detail = build_outfit_detail(outfit)
     if outfit.is_public:
         detail.like_count = _like_counts([outfit.id], db).get(outfit.id, 0)
+    if outfit.status == "complete":
+        detail.favorited_by_me = (
+            db.execute(
+                select(Favorite.id).where(
+                    Favorite.outfit_id == outfit.id, Favorite.user_id == user.id
+                )
+            ).scalar_one_or_none()
+            is not None
+        )
+        detail.comment_count = db.execute(
+            select(func.count(Comment.id)).where(Comment.outfit_id == outfit.id)
+        ).scalar_one()
     if outfit.status == "complete" and outfit.capture_mode == "item":
         detail.in_wardrobe = (
             db.execute(

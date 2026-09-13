@@ -34,7 +34,7 @@ import {
   unlikeOutfit,
 } from '../api/client';
 import { CommentSheet } from '../components/CommentSheet';
-import { Button } from '../components/primitives';
+import { Avatar, Button } from '../components/primitives';
 import type { FeedItem, RatingDimension } from '../api/types';
 import { colors, radius, sentenceCase, space, type, weight } from '../theme';
 
@@ -301,10 +301,8 @@ function FeedCard({
             accessibilityRole="button"
             accessibilityLabel={`Open ${item.owner_display_name}'s profile`}
           >
-            <View style={styles.railAvatar}>
-              <Text style={styles.railAvatarLetter}>
-                {item.owner_display_name.charAt(0).toUpperCase()}
-              </Text>
+            <View style={styles.railAvatarBorder}>
+              <Avatar name={item.owner_display_name} uri={item.owner_avatar_url} size={36} />
             </View>
             {!following ? (
               <Pressable
@@ -500,17 +498,12 @@ const styles = StyleSheet.create({
     gap: space.md,
   },
   railAvatarWrap: { alignItems: 'center', marginBottom: space.xs },
-  railAvatar: {
-    width: 36,
-    height: 36,
+  railAvatarBorder: {
     borderRadius: radius.pill,
-    backgroundColor: colors.accent,
-    alignItems: 'center',
-    justifyContent: 'center',
     borderWidth: 1.5,
     borderColor: colors.surface,
+    overflow: 'hidden',
   },
-  railAvatarLetter: { ...type.bodyMedium, color: colors.background, fontWeight: weight.medium },
   railFollowBadge: {
     position: 'absolute',
     bottom: -6,

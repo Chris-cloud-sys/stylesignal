@@ -79,6 +79,10 @@ class UserOut(BaseModel):
     is_stylist: bool
     created_at: datetime
     default_share_public: bool
+    # Signed URL, not a stored value — computed from User.avatar_key the
+    # same way OutfitDetail.thumb_url is computed from Outfit.thumb_key.
+    # None until the caller uploads one; never required.
+    avatar_url: Optional[str] = None
 
 
 class MeResponse(BaseModel):
@@ -189,6 +193,13 @@ class OutfitDetail(BaseModel):
     # public; omitted (not zeroed) for a private outfit so the client can
     # tell "never shared" apart from "shared, zero likes so far".
     like_count: Optional[int] = None
+    # SPEC+ — favoriting your own outfit is allowed (a personal bookmark,
+    # no community-visibility implication) — see Favorite in models.py.
+    # None until the scan completes, true/false after.
+    favorited_by_me: Optional[bool] = None
+    # SPEC+ — total comments (including replies), so the owner can see
+    # there's something to read without opening the sheet first.
+    comment_count: Optional[int] = None
     # SPEC+ — wardrobe catalog. Only meaningful for capture_mode="item";
     # None for a worn scan (nothing to add), True/False once it is.
     in_wardrobe: Optional[bool] = None
@@ -214,6 +225,7 @@ class OutfitListResponse(BaseModel):
 class UserProfileOut(BaseModel):
     user_id: uuid.UUID
     display_name: str
+    avatar_url: Optional[str] = None
     follower_count: int
     following_count: int
     outfit_count: int
@@ -283,6 +295,7 @@ class FeedItem(BaseModel):
     comment_count: int = 0
     owner_id: uuid.UUID
     owner_display_name: str
+    owner_avatar_url: Optional[str] = None
     # False for the caller's own outfits too (you can't follow yourself) —
     # the mobile client hides the follow badge itself in that case.
     following_owner: bool = False
@@ -305,6 +318,7 @@ class CommentOut(BaseModel):
     comment_id: uuid.UUID
     author_id: uuid.UUID
     author_display_name: str
+    author_avatar_url: Optional[str] = None
     body: str
     created_at: datetime
     is_mine: bool = False

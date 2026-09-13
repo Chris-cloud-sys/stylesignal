@@ -79,6 +79,67 @@ def test_register_login_refresh_me(client):
     assert body["quota"]["scans_remaining"] == 3
 
 
+def test_new_account_has_no_avatar_by_default(auth_client):
+    me = auth_client.get("/v1/auth/me").json()
+    assert me["user"]["avatar_url"] is None
+
+
+def test_can_upload_and_remove_a_profile_picture(auth_client):
+    uploaded = auth_client.post(
+        "/v1/auth/me/avatar",
+        files={"image": ("avatar.jpg", make_jpeg(400, 400), "image/jpeg")},
+    )
+    assert uploaded.status_code == 200, uploaded.text
+    avatar_url = uploaded.json()["user"]["avatar_url"]
+    assert avatar_url
+
+    me = auth_client.get("/v1/auth/me").json()
+    assert me["user"]["avatar_url"] == avatar_url
+
+    removed = auth_client.delete("/v1/auth/me/avatar")
+    assert removed.status_code == 200
+    assert removed.json()["user"]["avatar_url"] is None
+
+
+def test_avatar_upload_rejects_unsupported_type(auth_client):
+    response = auth_client.post(
+        "/v1/auth/me/avatar",
+        files={"image": ("avatar.txt", b"not an image", "text/plain")},
+    )
+    assert response.status_code == 400
+    assert response.json()["error"]["code"] == "unsupported_media_type"
+
+
+def test_avatar_shows_up_on_feed_and_comments(client):
+    author = client.post(
+        "/v1/auth/register",
+        json={"email": "avatar-feed-a-{0}@x.com".format(uuid.uuid4().hex[:8]), "password": "a-long-password"},
+    ).json()
+    client.headers.update({"Authorization": "Bearer " + author["access_token"]})
+    client.post(
+        "/v1/auth/me/avatar",
+        files={"image": ("avatar.jpg", make_jpeg(400, 400), "image/jpeg")},
+    )
+    outfit_id = upload(client, is_public="true")["outfit_id"]
+    wait_for_terminal(client, outfit_id)
+    client.post("/v1/outfits/{0}/comments".format(outfit_id), json={"body": "hi"})
+
+    viewer = client.post(
+        "/v1/auth/register",
+        json={"email": "avatar-feed-b-{0}@x.com".format(uuid.uuid4().hex[:8]), "password": "a-long-password"},
+    ).json()
+    client.headers.update({"Authorization": "Bearer " + viewer["access_token"]})
+
+    feed_item = next(
+        item for item in client.get("/v1/feed").json()["items"]
+        if item["outfit_id"] == outfit_id
+    )
+    assert feed_item["owner_avatar_url"]
+
+    comment = client.get("/v1/outfits/{0}/comments".format(outfit_id)).json()["items"][0]
+    assert comment["author_avatar_url"]
+
+
 def test_duplicate_registration_is_rejected(client):
     email = "dupe-{0}@example.com".format(uuid.uuid4().hex[:8])
     payload = {"email": email, "password": "a-long-password"}
@@ -745,6 +806,22 @@ def test_can_favorite_your_own_outfit(auth_client):
     assert favorited.status_code == 201
     items = auth_client.get("/v1/outfits/favorites").json()["items"]
     assert [item["outfit_id"] for item in items] == [outfit_id]
+
+
+def test_outfit_detail_reports_favorited_and_comment_count_to_owner(auth_client):
+    outfit_id = upload(auth_client, is_public="true")["outfit_id"]
+    wait_for_terminal(auth_client, outfit_id)
+
+    fresh = auth_client.get("/v1/outfits/{0}".format(outfit_id)).json()
+    assert fresh["favorited_by_me"] is False
+    assert fresh["comment_count"] == 0
+
+    auth_client.post("/v1/outfits/{0}/favorites".format(outfit_id))
+    auth_client.post("/v1/outfits/{0}/comments".format(outfit_id), json={"body": "note to self"})
+
+    after = auth_client.get("/v1/outfits/{0}".format(outfit_id)).json()
+    assert after["favorited_by_me"] is True
+    assert after["comment_count"] == 1
 
 
 def test_cannot_favorite_someone_elses_private_outfit(client):

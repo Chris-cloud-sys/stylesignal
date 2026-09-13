@@ -121,6 +121,7 @@ def get_feed(
             following_owner_subq.label("following_owner"),
             User.display_name.label("owner_display_name"),
             User.email.label("owner_email"),
+            User.avatar_key.label("owner_avatar_key"),
         )
         .outerjoin(Rating, Rating.outfit_id == Outfit.id)
         # Owner is 1:1 with Outfit — unlike Rating/Like above, this join
@@ -156,8 +157,12 @@ def get_feed(
             following_owner=bool(following_owner),
             owner_id=outfit.user_id,
             owner_display_name=(owner_display_name or "").strip() or owner_email.split("@")[0],
+            owner_avatar_url=storage.signed_url(owner_avatar_key) if owner_avatar_key else None,
         )
-        for outfit, _rating_count, like_count, liked_by_me, favorited_by_me, comment_count, following_owner, owner_display_name, owner_email in rows
+        for (
+            outfit, _rating_count, like_count, liked_by_me, favorited_by_me,
+            comment_count, following_owner, owner_display_name, owner_email, owner_avatar_key,
+        ) in rows
     ]
 
     offset = _decode_offset(cursor) + len(items)
@@ -318,6 +323,7 @@ def _comment_out(
     comment: Comment,
     display_name: Optional[str],
     email: str,
+    avatar_key: Optional[str],
     user: User,
     like_count: int,
     liked_by_me: int,
@@ -327,6 +333,7 @@ def _comment_out(
         comment_id=comment.id,
         author_id=comment.author_id,
         author_display_name=(display_name or "").strip() or email.split("@")[0],
+        author_avatar_url=get_storage().signed_url(avatar_key) if avatar_key else None,
         body=comment.body,
         created_at=comment.created_at,
         is_mine=comment.author_id == user.id,
@@ -367,6 +374,7 @@ def list_comments(
             Comment,
             User.display_name,
             User.email,
+            User.avatar_key,
             like_count_subq.label("like_count"),
             liked_by_me_subq.label("liked_by_me"),
         )
@@ -381,10 +389,10 @@ def list_comments(
     reply_counts = _reply_counts(db, [comment.id for comment, *_ in rows])
     items = [
         _comment_out(
-            comment, display_name, email, user, like_count, liked_by_me,
+            comment, display_name, email, avatar_key, user, like_count, liked_by_me,
             reply_count=reply_counts.get(comment.id, 0),
         )
-        for comment, display_name, email, like_count, liked_by_me in rows
+        for comment, display_name, email, avatar_key, like_count, liked_by_me in rows
     ]
 
     total_count = db.execute(
@@ -424,7 +432,10 @@ def list_replies(
     )
 
     statement = (
-        select(Comment, User.display_name, User.email, like_count_subq, liked_by_me_subq)
+        select(
+            Comment, User.display_name, User.email, User.avatar_key,
+            like_count_subq, liked_by_me_subq,
+        )
         .join(User, User.id == Comment.author_id)
         .where(Comment.outfit_id == outfit_id, Comment.parent_id == comment_id)
         .order_by(Comment.created_at.asc(), Comment.id.asc())
@@ -433,8 +444,8 @@ def list_replies(
     )
     rows = list(db.execute(statement))
     items = [
-        _comment_out(comment, display_name, email, user, like_count, liked_by_me)
-        for comment, display_name, email, like_count, liked_by_me in rows
+        _comment_out(comment, display_name, email, avatar_key, user, like_count, liked_by_me)
+        for comment, display_name, email, avatar_key, like_count, liked_by_me in rows
     ]
 
     offset = _decode_offset(cursor) + len(items)
@@ -489,6 +500,7 @@ def add_comment(
         comment_id=comment.id,
         author_id=user.id,
         author_display_name=display_name,
+        author_avatar_url=get_storage().signed_url(user.avatar_key) if user.avatar_key else None,
         body=comment.body,
         created_at=comment.created_at,
         is_mine=True,

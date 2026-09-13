@@ -24,6 +24,7 @@ import {
 
 import { fetchComments, fetchMe, fetchReplies, likeComment, postComment, unlikeComment } from '../api/client';
 import type { Comment } from '../api/types';
+import { Avatar } from './primitives';
 import { colors, radius, space, type, weight } from '../theme';
 
 interface Props {
@@ -34,16 +35,6 @@ interface Props {
   onCountChange: (delta: number) => void;
 }
 
-function Avatar({ name, size = 32 }: { name: string; size?: number }): React.ReactElement {
-  return (
-    <View style={[styles.avatar, { width: size, height: size, borderRadius: size / 2 }]}>
-      <Text style={[styles.avatarLetter, { fontSize: size * 0.42 }]}>
-        {name.charAt(0).toUpperCase()}
-      </Text>
-    </View>
-  );
-}
-
 export function CommentSheet({ outfitId, visible, onClose, onCountChange }: Props): React.ReactElement {
   const [items, setItems] = useState<Comment[]>([]);
   const [totalCount, setTotalCount] = useState(0);
@@ -52,6 +43,7 @@ export function CommentSheet({ outfitId, visible, onClose, onCountChange }: Prop
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [myName, setMyName] = useState('');
+  const [myAvatarUrl, setMyAvatarUrl] = useState<string | null>(null);
   const [replyTarget, setReplyTarget] = useState<Comment | null>(null);
   const [replies, setReplies] = useState<Record<string, Comment[]>>({});
   const [repliesLoading, setRepliesLoading] = useState<Record<string, boolean>>({});
@@ -74,7 +66,10 @@ export function CommentSheet({ outfitId, visible, onClose, onCountChange }: Prop
     if (!visible) return;
     void load();
     fetchMe()
-      .then((me) => setMyName(me.user.display_name || me.user.email.split('@')[0] || '?'))
+      .then((me) => {
+        setMyName(me.user.display_name || me.user.email.split('@')[0] || '?');
+        setMyAvatarUrl(me.user.avatar_url ?? null);
+      })
       .catch(() => undefined);
   }, [visible, load]);
 
@@ -161,7 +156,11 @@ export function CommentSheet({ outfitId, visible, onClose, onCountChange }: Prop
 
   const renderComment = (comment: Comment, parentId: string | null): React.ReactElement => (
     <View style={parentId ? styles.replyRow : styles.row}>
-      <Avatar name={comment.author_display_name} size={parentId ? 26 : 32} />
+      <Avatar
+        name={comment.author_display_name}
+        uri={comment.author_avatar_url}
+        size={parentId ? 26 : 32}
+      />
       <View style={styles.rowBody}>
         <Text style={styles.author}>{comment.author_display_name}</Text>
         <Text style={styles.body}>{comment.body}</Text>
@@ -258,7 +257,7 @@ export function CommentSheet({ outfitId, visible, onClose, onCountChange }: Prop
           ) : null}
 
           <View style={styles.composerRow}>
-            <Avatar name={myName || '?'} size={30} />
+            <Avatar name={myName || '?'} uri={myAvatarUrl} size={30} />
             <TextInput
               style={styles.input}
               placeholder={replyTarget ? `Reply to ${replyTarget.author_display_name}` : 'Add a comment'}
@@ -315,13 +314,6 @@ const styles = StyleSheet.create({
   list: { flexGrow: 0 },
   empty: { ...type.body, color: colors.textMuted, paddingVertical: space.lg },
   error: { ...type.meta, color: colors.systemError, marginBottom: space.sm },
-
-  avatar: {
-    backgroundColor: colors.accent,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  avatarLetter: { color: colors.background, fontWeight: weight.medium },
 
   row: {
     flexDirection: 'row',

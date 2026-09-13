@@ -94,6 +94,10 @@ export interface OutfitDetail {
   /** SPEC+ — likes/favorites. Present only once shared (see docs/spec-
    * deviations.md); absent, not zero, means "never shared". */
   like_count?: number | null;
+  /** SPEC+ — favoriting your own outfit is allowed (a personal bookmark). */
+  favorited_by_me?: boolean | null;
+  /** SPEC+ — total comments (including replies) on this outfit. */
+  comment_count?: number | null;
   /** SPEC+ — wardrobe catalog. Only meaningful for capture_mode "item". */
   in_wardrobe?: boolean | null;
 }
@@ -116,6 +120,7 @@ export interface OutfitListResponse {
 export interface UserProfile {
   user_id: string;
   display_name: string;
+  avatar_url?: string | null;
   follower_count: number;
   following_count: number;
   outfit_count: number;
@@ -199,6 +204,7 @@ export interface Me {
     /** Profile-level default for the "share for community feedback"
      * choice — replaces what used to be a per-scan toggle. */
     default_share_public: boolean;
+    avatar_url?: string | null;
   };
   quota: Quota;
 }
@@ -225,6 +231,7 @@ export interface FeedItem {
   comment_count: number;
   owner_id: string;
   owner_display_name: string;
+  owner_avatar_url?: string | null;
   following_owner: boolean;
 }
 
@@ -232,6 +239,7 @@ export interface Comment {
   comment_id: string;
   author_id: string;
   author_display_name: string;
+  author_avatar_url?: string | null;
   body: string;
   created_at: string;
   is_mine: boolean;

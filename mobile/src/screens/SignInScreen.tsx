@@ -14,7 +14,9 @@ import { Button, PasswordField } from '../components/primitives';
 import { colors, space, type } from '../theme';
 
 interface Props {
-  onSignedIn: () => void;
+  /** `justRegistered` lets the caller offer the one-time "add a profile
+   * picture" prompt only right after account creation, never on a login. */
+  onSignedIn: (justRegistered: boolean) => void;
   onForgotPassword: () => void;
 }
 
@@ -37,7 +39,7 @@ export function SignInScreen({ onSignedIn, onForgotPassword }: Props): React.Rea
       } else {
         await login(email.trim(), password);
       }
-      onSignedIn();
+      onSignedIn(creating);
     } catch (caught) {
       setError(
         caught instanceof ApiError

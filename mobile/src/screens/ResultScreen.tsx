@@ -12,7 +12,14 @@ import React, { useRef, useState } from 'react';
 import { Image, Pressable, ScrollView, Share, StyleSheet, Text, View } from 'react-native';
 import { captureRef } from 'react-native-view-shot';
 
-import { absoluteMediaUrl, addToWardrobe, ApiError, rereadOutfit } from '../api/client';
+import {
+  absoluteMediaUrl,
+  addToWardrobe,
+  ApiError,
+  favoriteOutfit,
+  rereadOutfit,
+  unfavoriteOutfit,
+} from '../api/client';
 import type {
   FailureReason,
   Feedback,
@@ -36,6 +43,7 @@ import {
   SkeletonLine,
   Swatches,
 } from '../components/primitives';
+import { CommentSheet } from '../components/CommentSheet';
 import { ShareCard } from '../components/ShareCard';
 import { OCCASIONS, type Occasion } from '../config';
 import { colors, radius, sentenceCase, space, type, weight } from '../theme';
@@ -169,6 +177,29 @@ function Complete({
   const [sharing, setSharing] = useState(false);
   const [inWardrobe, setInWardrobe] = useState(outfit.in_wardrobe ?? false);
   const [addingToWardrobe, setAddingToWardrobe] = useState(false);
+  const [favorited, setFavorited] = useState(outfit.favorited_by_me ?? false);
+  const [favoriteBusy, setFavoriteBusy] = useState(false);
+  const [commentCount, setCommentCount] = useState(outfit.comment_count ?? 0);
+  const [commentsOpen, setCommentsOpen] = useState(false);
+
+  // SPEC+ — favoriting your own outfit is allowed (a personal bookmark, no
+  // community-visibility implication) — see Favorite in models.py.
+  const toggleFavorite = async (): Promise<void> => {
+    if (favoriteBusy) return;
+    const wasFavorited = favorited;
+    setFavoriteBusy(true);
+    setFavorited(!wasFavorited);
+    try {
+      const response = wasFavorited
+        ? await unfavoriteOutfit(outfit.outfit_id)
+        : await favoriteOutfit(outfit.outfit_id);
+      setFavorited(response.favorited);
+    } catch {
+      setFavorited(wasFavorited);
+    } finally {
+      setFavoriteBusy(false);
+    }
+  };
 
   const handleShare = async (): Promise<void> => {
     if (!feedback || sharing) return;
@@ -203,15 +234,52 @@ function Complete({
         <Pressable onPress={onDone} accessibilityRole="button">
           <Text style={styles.topBarLink}>Home</Text>
         </Pressable>
-        {/* Owner-visible like count (§ SPEC+ likes) — present only when the
-            outfit is shared with the community; see get_outfit in
-            outfits.py, which only populates this for the outfit's owner. */}
-        {typeof outfit.like_count === 'number' ? (
-          <Text style={styles.topBarLikes}>
-            ♥ {outfit.like_count} {outfit.like_count === 1 ? 'like' : 'likes'}
-          </Text>
-        ) : null}
+        <View style={styles.topBarActions}>
+          {/* Owner-visible like count (§ SPEC+ likes) — present only when
+              the outfit is shared with the community; see get_outfit in
+              outfits.py, which only populates this for the outfit's
+              owner. No toggle here — you can't like your own outfit. */}
+          {typeof outfit.like_count === 'number' ? (
+            <Text style={styles.topBarLikes}>
+              ♥ {outfit.like_count} {outfit.like_count === 1 ? 'like' : 'likes'}
+            </Text>
+          ) : null}
+          {outfit.status === 'complete' ? (
+            <>
+              <Pressable
+                onPress={() => setCommentsOpen(true)}
+                style={styles.topBarIconButton}
+                accessibilityRole="button"
+                accessibilityLabel="View comments"
+              >
+                <Ionicons name="chatbubble-outline" size={20} color={colors.text} />
+                {commentCount > 0 ? (
+                  <Text style={styles.topBarIconCount}>{commentCount}</Text>
+                ) : null}
+              </Pressable>
+              <Pressable
+                onPress={() => void toggleFavorite()}
+                style={styles.topBarIconButton}
+                accessibilityRole="button"
+                accessibilityLabel={favorited ? 'Remove from favorites' : 'Add to favorites'}
+              >
+                <Ionicons
+                  name={favorited ? 'bookmark' : 'bookmark-outline'}
+                  size={20}
+                  color={favorited ? colors.accent : colors.text}
+                />
+              </Pressable>
+            </>
+          ) : null}
+        </View>
       </View>
+
+      <CommentSheet
+        outfitId={outfit.outfit_id}
+        visible={commentsOpen}
+        onClose={() => setCommentsOpen(false)}
+        onCountChange={(delta) => setCommentCount((count) => Math.max(0, count + delta))}
+      />
 
       {thumb ? (
         <View style={styles.hero}>
@@ -624,7 +692,10 @@ const styles = StyleSheet.create({
     marginBottom: space.sm,
   },
   topBarLink: { ...type.meta, color: colors.textMuted },
+  topBarActions: { flexDirection: 'row', alignItems: 'center', gap: space.md },
   topBarLikes: { ...type.meta, color: colors.accent },
+  topBarIconButton: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  topBarIconCount: { ...type.meta, color: colors.textMuted },
   stage: { ...type.meta, color: colors.textMuted, marginBottom: space.md },
   wardrobeButton: { marginBottom: space.lg },
   // §7.8 the hero is a container for the photo AND the scrim-mounted

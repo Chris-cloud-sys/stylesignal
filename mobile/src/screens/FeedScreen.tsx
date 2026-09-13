@@ -16,6 +16,7 @@ import {
   FlatList,
   Image,
   Pressable,
+  Share,
   StyleSheet,
   Text,
   View,
@@ -25,13 +26,16 @@ import {
   absoluteMediaUrl,
   favoriteOutfit,
   fetchFeed,
+  followUser,
   likeOutfit,
   rateOutfit,
   unfavoriteOutfit,
+  unfollowUser,
   unlikeOutfit,
 } from '../api/client';
-import type { FeedItem, RatingDimension } from '../api/types';
+import { CommentSheet } from '../components/CommentSheet';
 import { Button } from '../components/primitives';
+import type { FeedItem, RatingDimension } from '../api/types';
 import { colors, radius, sentenceCase, space, type, weight } from '../theme';
 
 interface Props {
@@ -177,6 +181,10 @@ function FeedCard({
   const [likeBusy, setLikeBusy] = useState(false);
   const [favorited, setFavorited] = useState(item.favorited_by_me);
   const [favoriteBusy, setFavoriteBusy] = useState(false);
+  const [commentCount, setCommentCount] = useState(item.comment_count);
+  const [commentsOpen, setCommentsOpen] = useState(false);
+  const [following, setFollowing] = useState(item.following_owner);
+  const [followBusy, setFollowBusy] = useState(false);
   const thumb = absoluteMediaUrl(item.thumb_url);
   const hasAnyValue = Object.keys(values).length > 0;
 
@@ -225,6 +233,35 @@ function FeedCard({
     }
   };
 
+  // TikTok-style quick-follow from the feed itself — the profile screen's
+  // own follow button already existed, but this is the one-tap version
+  // right on the card, no navigation required.
+  const toggleFollow = async (): Promise<void> => {
+    if (followBusy) return;
+    const wasFollowing = following;
+    setFollowBusy(true);
+    setFollowing(!wasFollowing);
+    try {
+      const response = wasFollowing
+        ? await unfollowUser(item.owner_id)
+        : await followUser(item.owner_id);
+      setFollowing(response.following);
+    } catch {
+      setFollowing(wasFollowing);
+    } finally {
+      setFollowBusy(false);
+    }
+  };
+
+  const share = (): void => {
+    const occasionPhrase = item.occasion ? ` for ${sentenceCase(item.occasion)}` : '';
+    Share.share({
+      message: `${item.owner_display_name} shared a read${occasionPhrase} on StyleSignal.`,
+    }).catch(() => {
+      // Share sheet dismissed or unavailable — nothing to recover.
+    });
+  };
+
   const submit = async (): Promise<void> => {
     if (!hasAnyValue || submitting) return;
     setSubmitting(true);
@@ -246,53 +283,98 @@ function FeedCard({
 
   return (
     <View style={styles.card}>
-      {thumb ? (
-        <Image source={{ uri: thumb }} style={styles.cardImage} resizeMode="cover" />
-      ) : (
-        <View style={[styles.cardImage, styles.cardImagePlaceholder]} />
-      )}
-
-      <Pressable
-        onPress={() => onOpenProfile(item.owner_id)}
-        style={styles.ownerRow}
-        accessibilityRole="button"
-        accessibilityLabel={`Open ${item.owner_display_name}'s profile`}
-      >
-        <Text style={styles.ownerName}>{item.owner_display_name}</Text>
-      </Pressable>
-
-      <View style={styles.cardHead}>
-        {item.occasion ? (
-          <Text style={styles.cardOccasion}>Occasion: {sentenceCase(item.occasion)}</Text>
+      <View style={styles.imageWrap}>
+        {thumb ? (
+          <Image source={{ uri: thumb }} style={styles.cardImage} resizeMode="cover" />
         ) : (
-          <View />
+          <View style={[styles.cardImage, styles.cardImagePlaceholder]} />
         )}
-        <View style={styles.cardActions}>
+
+        {/* TikTok-style vertical action rail — the one place in the app
+            these five per-post actions (follow, like, comment, favorite,
+            share) live together, overlaid on the content they act on
+            rather than competing with the bottom tab bar's navigation. */}
+        <View style={styles.rail}>
+          <Pressable
+            onPress={() => onOpenProfile(item.owner_id)}
+            style={styles.railAvatarWrap}
+            accessibilityRole="button"
+            accessibilityLabel={`Open ${item.owner_display_name}'s profile`}
+          >
+            <View style={styles.railAvatar}>
+              <Text style={styles.railAvatarLetter}>
+                {item.owner_display_name.charAt(0).toUpperCase()}
+              </Text>
+            </View>
+            {!following ? (
+              <Pressable
+                onPress={() => void toggleFollow()}
+                style={styles.railFollowBadge}
+                accessibilityRole="button"
+                accessibilityLabel={`Follow ${item.owner_display_name}`}
+                hitSlop={6}
+              >
+                <Ionicons name="add" size={12} color={colors.background} />
+              </Pressable>
+            ) : null}
+          </Pressable>
+
           <Pressable
             onPress={() => void toggleLike()}
-            style={styles.likeButton}
+            style={styles.railAction}
             accessibilityRole="button"
             accessibilityLabel={liked ? 'Unlike this outfit' : 'Like this outfit'}
           >
-            <Text style={[styles.likeGlyph, liked && styles.likeGlyphActive]}>
+            <Text style={[styles.railLikeGlyph, liked && styles.railLikeGlyphActive]}>
               {liked ? '♥' : '♡'}
             </Text>
-            <Text style={styles.likeCount}>{likeCount}</Text>
+            <Text style={styles.railCount}>{likeCount}</Text>
           </Pressable>
+
+          <Pressable
+            onPress={() => setCommentsOpen(true)}
+            style={styles.railAction}
+            accessibilityRole="button"
+            accessibilityLabel="View comments"
+          >
+            <Ionicons name="chatbubble-outline" size={24} color={colors.surface} />
+            <Text style={styles.railCount}>{commentCount}</Text>
+          </Pressable>
+
           <Pressable
             onPress={() => void toggleFavorite()}
-            style={styles.favoriteButton}
+            style={styles.railAction}
             accessibilityRole="button"
             accessibilityLabel={favorited ? 'Remove from favorites' : 'Add to favorites'}
           >
             <Ionicons
               name={favorited ? 'bookmark' : 'bookmark-outline'}
-              size={18}
-              color={favorited ? colors.accent : colors.textMuted}
+              size={24}
+              color={favorited ? colors.accent : colors.surface}
             />
+          </Pressable>
+
+          <Pressable
+            onPress={share}
+            style={styles.railAction}
+            accessibilityRole="button"
+            accessibilityLabel="Share this read"
+          >
+            <Ionicons name="arrow-redo-outline" size={24} color={colors.surface} />
           </Pressable>
         </View>
       </View>
+
+      {item.occasion ? (
+        <Text style={styles.cardOccasion}>Occasion: {sentenceCase(item.occasion)}</Text>
+      ) : null}
+
+      <CommentSheet
+        outfitId={item.outfit_id}
+        visible={commentsOpen}
+        onClose={() => setCommentsOpen(false)}
+        onCountChange={(delta) => setCommentCount((count) => Math.max(0, count + delta))}
+      />
 
       {DIMENSIONS.map((dimension) => (
         <RatingRow
@@ -398,31 +480,61 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
   },
+  imageWrap: { marginBottom: space.sm },
   cardImage: {
     width: '100%',
     aspectRatio: 3 / 4,
     borderRadius: radius.lg,
     backgroundColor: colors.surface,
-    marginBottom: space.sm,
   },
   cardImagePlaceholder: { borderWidth: 1, borderColor: colors.border },
-  ownerRow: { alignSelf: 'flex-start', marginBottom: space.xs },
-  ownerName: { ...type.meta, color: colors.accent, fontWeight: '600' },
-  cardHead: {
-    flexDirection: 'row',
+  cardOccasion: { ...type.meta, color: colors.textMuted, marginBottom: space.md },
+
+  // --- Vertical action rail, TikTok-style: overlaid on the image's
+  // bottom-right corner rather than competing with the bottom tab bar. ---
+  rail: {
+    position: 'absolute',
+    right: space.sm,
+    bottom: space.md,
     alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: space.md,
+    gap: space.md,
   },
-  cardOccasion: { ...type.meta, color: colors.textMuted },
-  cardActions: { flexDirection: 'row', alignItems: 'center' },
+  railAvatarWrap: { alignItems: 'center', marginBottom: space.xs },
+  railAvatar: {
+    width: 36,
+    height: 36,
+    borderRadius: radius.pill,
+    backgroundColor: colors.accent,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1.5,
+    borderColor: colors.surface,
+  },
+  railAvatarLetter: { ...type.bodyMedium, color: colors.background, fontWeight: weight.medium },
+  railFollowBadge: {
+    position: 'absolute',
+    bottom: -6,
+    width: 18,
+    height: 18,
+    borderRadius: radius.pill,
+    backgroundColor: colors.accent,
+    borderWidth: 1.5,
+    borderColor: colors.surface,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  railAction: { alignItems: 'center' },
   // §2.6: amber is the accent, never red — a liked heart stays on-brand
   // rather than reaching for the conventional red fill.
-  likeButton: { flexDirection: 'row', alignItems: 'center', gap: space.xs, padding: space.xs },
-  likeGlyph: { fontSize: 18, color: colors.textMuted },
-  likeGlyphActive: { color: colors.accent },
-  likeCount: { ...type.meta, color: colors.textMuted },
-  favoriteButton: { padding: space.xs },
+  railLikeGlyph: { fontSize: 26, color: colors.surface, lineHeight: 28 },
+  railLikeGlyphActive: { color: colors.accent },
+  railCount: {
+    ...type.meta,
+    color: colors.surface,
+    marginTop: 2,
+    textShadowColor: 'rgba(0,0,0,0.4)',
+    textShadowRadius: 3,
+  },
   cardSubmit: { marginTop: space.sm },
 
   ratingRow: { marginBottom: space.md },

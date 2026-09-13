@@ -280,12 +280,37 @@ class FeedItem(BaseModel):
     like_count: int = 0
     liked_by_me: bool = False
     favorited_by_me: bool = False
+    comment_count: int = 0
     owner_id: uuid.UUID
     owner_display_name: str
+    # False for the caller's own outfits too (you can't follow yourself) —
+    # the mobile client hides the follow badge itself in that case.
+    following_owner: bool = False
 
 
 class FeedResponse(BaseModel):
     items: List[FeedItem]
+    cursor: Optional[str] = None
+
+
+# --- Comment threads (SPEC+ — see docs/spec-deviations.md) -----------------
+class CommentCreateRequest(BaseModel):
+    body: str = Field(min_length=1, max_length=500)
+
+
+class CommentOut(BaseModel):
+    comment_id: uuid.UUID
+    author_id: uuid.UUID
+    author_display_name: str
+    body: str
+    created_at: datetime
+    # Only ever true for the caller's own comment — the only one they're
+    # allowed to delete.
+    is_mine: bool = False
+
+
+class CommentListResponse(BaseModel):
+    items: List[CommentOut]
     cursor: Optional[str] = None
 
 

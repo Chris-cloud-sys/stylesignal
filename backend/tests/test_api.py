@@ -770,6 +770,135 @@ def test_favorites_is_empty_for_a_fresh_account(auth_client):
     assert auth_client.get("/v1/outfits/favorites").json() == {"items": [], "cursor": None}
 
 
+# --- Comment threads (SPEC+, docs/spec-deviations.md) -----------------------
+def test_can_add_and_list_comments_on_a_public_outfit(client):
+    author = client.post(
+        "/v1/auth/register",
+        json={"email": "comment-a-{0}@x.com".format(uuid.uuid4().hex[:8]), "password": "a-long-password"},
+    ).json()
+    client.headers.update({"Authorization": "Bearer " + author["access_token"]})
+    outfit_id = upload(client, is_public="true")["outfit_id"]
+    wait_for_terminal(client, outfit_id)
+
+    commenter = client.post(
+        "/v1/auth/register",
+        json={"email": "comment-b-{0}@x.com".format(uuid.uuid4().hex[:8]), "password": "a-long-password"},
+    ).json()
+    client.headers.update({"Authorization": "Bearer " + commenter["access_token"]})
+
+    posted = client.post(
+        "/v1/outfits/{0}/comments".format(outfit_id), json={"body": "Love this palette."}
+    )
+    assert posted.status_code == 201, posted.text
+    body = posted.json()
+    assert body["body"] == "Love this palette."
+    assert body["is_mine"] is True
+
+    thread = client.get("/v1/outfits/{0}/comments".format(outfit_id)).json()
+    assert len(thread["items"]) == 1
+    assert thread["items"][0]["body"] == "Love this palette."
+
+
+def test_owner_can_comment_on_their_own_outfit(auth_client):
+    outfit_id = upload(auth_client, is_public="true")["outfit_id"]
+    wait_for_terminal(auth_client, outfit_id)
+
+    posted = auth_client.post(
+        "/v1/outfits/{0}/comments".format(outfit_id), json={"body": "Thanks everyone!"}
+    )
+    assert posted.status_code == 201
+
+
+def test_cannot_comment_on_someone_elses_private_outfit(client):
+    author = client.post(
+        "/v1/auth/register",
+        json={"email": "comment-priv-a-{0}@x.com".format(uuid.uuid4().hex[:8]), "password": "a-long-password"},
+    ).json()
+    client.headers.update({"Authorization": "Bearer " + author["access_token"]})
+    private = upload(client, is_public="false")["outfit_id"]
+    wait_for_terminal(client, private)
+
+    other = client.post(
+        "/v1/auth/register",
+        json={"email": "comment-priv-b-{0}@x.com".format(uuid.uuid4().hex[:8]), "password": "a-long-password"},
+    ).json()
+    client.headers.update({"Authorization": "Bearer " + other["access_token"]})
+
+    blocked = client.post(
+        "/v1/outfits/{0}/comments".format(private), json={"body": "hi"}
+    )
+    assert blocked.status_code == 404
+
+
+def test_empty_comment_is_rejected(auth_client):
+    outfit_id = upload(auth_client, is_public="true")["outfit_id"]
+    wait_for_terminal(auth_client, outfit_id)
+
+    blocked = auth_client.post(
+        "/v1/outfits/{0}/comments".format(outfit_id), json={"body": "   "}
+    )
+    assert blocked.status_code == 400
+    assert blocked.json()["error"]["code"] == "empty_comment"
+
+
+def test_author_can_delete_their_own_comment_but_not_others(client):
+    author = client.post(
+        "/v1/auth/register",
+        json={"email": "comment-del-a-{0}@x.com".format(uuid.uuid4().hex[:8]), "password": "a-long-password"},
+    ).json()
+    client.headers.update({"Authorization": "Bearer " + author["access_token"]})
+    outfit_id = upload(client, is_public="true")["outfit_id"]
+    wait_for_terminal(client, outfit_id)
+
+    commenter = client.post(
+        "/v1/auth/register",
+        json={"email": "comment-del-b-{0}@x.com".format(uuid.uuid4().hex[:8]), "password": "a-long-password"},
+    ).json()
+    client.headers.update({"Authorization": "Bearer " + commenter["access_token"]})
+    comment_id = client.post(
+        "/v1/outfits/{0}/comments".format(outfit_id), json={"body": "nice fit"}
+    ).json()["comment_id"]
+
+    # The outfit's author cannot delete someone else's comment on it.
+    client.headers.update({"Authorization": "Bearer " + author["access_token"]})
+    blocked = client.delete("/v1/outfits/{0}/comments/{1}".format(outfit_id, comment_id))
+    assert blocked.status_code == 400
+    assert blocked.json()["error"]["code"] == "cannot_delete_others_comment"
+
+    # The commenter can delete their own.
+    client.headers.update({"Authorization": "Bearer " + commenter["access_token"]})
+    removed = client.delete("/v1/outfits/{0}/comments/{1}".format(outfit_id, comment_id))
+    assert removed.status_code == 204
+    assert client.get("/v1/outfits/{0}/comments".format(outfit_id)).json()["items"] == []
+
+
+def test_feed_reports_comment_count_and_following_owner(client):
+    author = client.post(
+        "/v1/auth/register",
+        json={"email": "feed-meta-a-{0}@x.com".format(uuid.uuid4().hex[:8]), "password": "a-long-password"},
+    ).json()
+    client.headers.update({"Authorization": "Bearer " + author["access_token"]})
+    outfit_id = upload(client, is_public="true")["outfit_id"]
+    wait_for_terminal(client, outfit_id)
+    author_id = client.get("/v1/auth/me").json()["user"]["id"]
+
+    viewer = client.post(
+        "/v1/auth/register",
+        json={"email": "feed-meta-b-{0}@x.com".format(uuid.uuid4().hex[:8]), "password": "a-long-password"},
+    ).json()
+    client.headers.update({"Authorization": "Bearer " + viewer["access_token"]})
+
+    client.post("/v1/outfits/{0}/comments".format(outfit_id), json={"body": "great look"})
+    client.post("/v1/users/{0}/follow".format(author_id))
+
+    item = next(
+        item for item in client.get("/v1/feed").json()["items"]
+        if item["outfit_id"] == outfit_id
+    )
+    assert item["comment_count"] == 1
+    assert item["following_owner"] is True
+
+
 # --- Community-sharing default (SPEC+ — moved from a per-scan toggle to a
 # Profile-level preference, default on) --------------------------------------
 def test_new_scan_is_public_by_default(auth_client):

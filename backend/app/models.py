@@ -202,6 +202,9 @@ class Outfit(Base):
     favorites: Mapped[List["Favorite"]] = relationship(
         back_populates="outfit", cascade="all, delete-orphan"
     )
+    comments: Mapped[List["Comment"]] = relationship(
+        back_populates="outfit", cascade="all, delete-orphan"
+    )
 
     # --- §5.7 key layout is derivable from the id; only original_key is stored
     @property
@@ -444,6 +447,35 @@ class Follow(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=_utcnow
     )
+
+
+COMMENT_BODY_MAX_LENGTH = 500
+
+
+class Comment(Base):
+    """SPEC+ — comment threads on a shared outfit (docs/spec-deviations.md).
+
+    Unlike Like/Favorite, an outfit's own owner CAN comment on it (every
+    mainstream social app allows replying on your own post) — only the
+    others-only rule from Like carries over here as "must be visible to
+    the commenter", not "must not be your own".
+    """
+
+    __tablename__ = "comments"
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=_uuid)
+    outfit_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid, ForeignKey("outfits.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    author_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    body: Mapped[str] = mapped_column(String(COMMENT_BODY_MAX_LENGTH), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=_utcnow
+    )
+
+    outfit: Mapped[Outfit] = relationship(back_populates="comments")
 
 
 class WardrobeItem(Base):

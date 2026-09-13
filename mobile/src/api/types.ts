@@ -222,8 +222,24 @@ export interface FeedItem {
   like_count: number;
   liked_by_me: boolean;
   favorited_by_me: boolean;
+  comment_count: number;
   owner_id: string;
   owner_display_name: string;
+  following_owner: boolean;
+}
+
+export interface Comment {
+  comment_id: string;
+  author_id: string;
+  author_display_name: string;
+  body: string;
+  created_at: string;
+  is_mine: boolean;
+}
+
+export interface CommentListResponse {
+  items: Comment[];
+  cursor?: string | null;
 }
 
 export interface LikeResponse {

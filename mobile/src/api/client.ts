@@ -10,6 +10,8 @@ import * as SecureStore from 'expo-secure-store';
 import { API_BASE_URL } from '../config';
 import type {
   ApiErrorBody,
+  Comment,
+  CommentListResponse,
   FavoriteResponse,
   FeedResponse,
   FollowResponse,
@@ -327,6 +329,24 @@ export function favoriteOutfit(outfitId: string): Promise<FavoriteResponse> {
 
 export function unfavoriteOutfit(outfitId: string): Promise<FavoriteResponse> {
   return request<FavoriteResponse>(`/v1/outfits/${outfitId}/favorites`, { method: 'DELETE' });
+}
+
+// --- Comment threads (SPEC+, docs/spec-deviations.md) -----------------------
+export function fetchComments(outfitId: string, cursor?: string | null): Promise<CommentListResponse> {
+  const query = cursor ? `?limit=20&cursor=${encodeURIComponent(cursor)}` : '?limit=20';
+  return request<CommentListResponse>(`/v1/outfits/${outfitId}/comments${query}`);
+}
+
+export function postComment(outfitId: string, body: string): Promise<Comment> {
+  return request<Comment>(`/v1/outfits/${outfitId}/comments`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ body }),
+  });
+}
+
+export function deleteComment(outfitId: string, commentId: string): Promise<void> {
+  return request<void>(`/v1/outfits/${outfitId}/comments/${commentId}`, { method: 'DELETE' });
 }
 
 // --- Profiles / follow graph (SPEC+, docs/spec-deviations.md) --------------

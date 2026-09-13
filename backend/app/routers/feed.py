@@ -17,9 +17,12 @@ from ..config import get_settings
 from ..db import get_db
 from ..deps import get_current_user
 from ..errors import APIError, bad_request, not_found
-from ..models import Favorite, Like, Outfit, Rating, User
+from ..models import COMMENT_BODY_MAX_LENGTH, Comment, Favorite, Follow, Like, Outfit, Rating, User
 from ..quota import credit_rating, quota_out
 from ..schemas import (
+    CommentCreateRequest,
+    CommentListResponse,
+    CommentOut,
     FavoriteResponse,
     FeedItem,
     FeedResponse,
@@ -85,6 +88,16 @@ def get_feed(
         .where(Favorite.outfit_id == Outfit.id, Favorite.user_id == user.id)
         .scalar_subquery()
     )
+    comment_count_subq = (
+        select(func.count(Comment.id))
+        .where(Comment.outfit_id == Outfit.id)
+        .scalar_subquery()
+    )
+    following_owner_subq = (
+        select(func.count(Follow.id))
+        .where(Follow.follower_id == user.id, Follow.followee_id == Outfit.user_id)
+        .scalar_subquery()
+    )
 
     statement = (
         select(
@@ -93,6 +106,8 @@ def get_feed(
             like_count_subq.label("like_count"),
             liked_by_me_subq.label("liked_by_me"),
             favorited_by_me_subq.label("favorited_by_me"),
+            comment_count_subq.label("comment_count"),
+            following_owner_subq.label("following_owner"),
             User.display_name.label("owner_display_name"),
             User.email.label("owner_email"),
         )
@@ -126,10 +141,12 @@ def get_feed(
             like_count=like_count,
             liked_by_me=bool(liked_by_me),
             favorited_by_me=bool(favorited_by_me),
+            comment_count=comment_count,
+            following_owner=bool(following_owner),
             owner_id=outfit.user_id,
             owner_display_name=(owner_display_name or "").strip() or owner_email.split("@")[0],
         )
-        for outfit, _rating_count, like_count, liked_by_me, favorited_by_me, owner_display_name, owner_email in rows
+        for outfit, _rating_count, like_count, liked_by_me, favorited_by_me, comment_count, following_owner, owner_display_name, owner_email in rows
     ]
 
     offset = _decode_offset(cursor) + len(items)
@@ -280,6 +297,121 @@ def _like_count(db: Session, outfit_id: uuid.UUID) -> int:
     return db.execute(
         select(func.count(Like.id)).where(Like.outfit_id == outfit_id)
     ).scalar_one()
+
+
+# --- Comments (SPEC+ — see docs/spec-deviations.md) -------------------------
+@router.get(
+    "/v1/outfits/{outfit_id}/comments",
+    response_model=CommentListResponse,
+    summary="A thread of comments on a shared outfit",
+)
+def list_comments(
+    outfit_id: uuid.UUID,
+    limit: int = Query(default=20, ge=1, le=50),
+    cursor: Optional[str] = Query(default=None),
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> CommentListResponse:
+    _require_community_enabled()
+    _commentable_outfit(db, outfit_id, user)
+
+    statement = (
+        select(Comment, User.display_name, User.email)
+        .join(User, User.id == Comment.author_id)
+        .where(Comment.outfit_id == outfit_id)
+        .order_by(Comment.created_at.asc(), Comment.id.asc())
+        .offset(_decode_offset(cursor))
+        .limit(limit)
+    )
+    rows = list(db.execute(statement))
+    items = [
+        CommentOut(
+            comment_id=comment.id,
+            author_id=comment.author_id,
+            author_display_name=(display_name or "").strip() or email.split("@")[0],
+            body=comment.body,
+            created_at=comment.created_at,
+            is_mine=comment.author_id == user.id,
+        )
+        for comment, display_name, email in rows
+    ]
+
+    offset = _decode_offset(cursor) + len(items)
+    next_cursor = str(offset) if len(items) == limit else None
+    return CommentListResponse(items=items, cursor=next_cursor)
+
+
+@router.post(
+    "/v1/outfits/{outfit_id}/comments",
+    response_model=CommentOut,
+    status_code=status.HTTP_201_CREATED,
+    summary="Add a comment to a shared outfit",
+)
+def add_comment(
+    outfit_id: uuid.UUID,
+    payload: CommentCreateRequest,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> CommentOut:
+    _require_community_enabled()
+    ratelimit.check("comment:{0}".format(user.id), limit=60, window_seconds=3600)
+    _commentable_outfit(db, outfit_id, user)
+
+    body = payload.body.strip()
+    if not body:
+        raise bad_request("empty_comment", "A comment cannot be empty.")
+
+    comment = Comment(outfit_id=outfit_id, author_id=user.id, body=body[:COMMENT_BODY_MAX_LENGTH])
+    db.add(comment)
+    db.commit()
+    db.refresh(comment)
+
+    display_name = (user.display_name or "").strip() or user.email.split("@")[0]
+    return CommentOut(
+        comment_id=comment.id,
+        author_id=user.id,
+        author_display_name=display_name,
+        body=comment.body,
+        created_at=comment.created_at,
+        is_mine=True,
+    )
+
+
+@router.delete(
+    "/v1/outfits/{outfit_id}/comments/{comment_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Remove the caller's own comment",
+)
+def delete_comment(
+    outfit_id: uuid.UUID,
+    comment_id: uuid.UUID,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> None:
+    _require_community_enabled()
+
+    comment = db.get(Comment, comment_id)
+    if comment is None or comment.outfit_id != outfit_id:
+        raise not_found("Comment")
+    if comment.author_id != user.id:
+        raise bad_request("cannot_delete_others_comment", "You can only remove your own comments.")
+
+    db.delete(comment)
+    db.commit()
+
+
+def _commentable_outfit(db: Session, outfit_id: uuid.UUID, user: User) -> Outfit:
+    # Unlike _likeable_outfit: the owner CAN comment on their own outfit —
+    # only the visibility rule (public, or your own) carries over.
+    outfit = db.get(Outfit, outfit_id)
+    if (
+        outfit is None
+        or outfit.deleted_at is not None
+        or outfit.status != "complete"
+        or (not outfit.is_public and outfit.user_id != user.id)
+    ):
+        raise not_found("Outfit")
+    return outfit
 
 
 def _decode_offset(cursor: Optional[str]) -> int:

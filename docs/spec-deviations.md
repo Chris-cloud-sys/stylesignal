@@ -1101,3 +1101,53 @@ an arbitrary photo outside the item-mode capture flow. All three were on
 the table when this was scoped and cut to keep the reversal bounded —
 worth revisiting once the item-mode-only version has real usage to learn
 from.
+
+---
+
+## 32. TikTok-style vertical action rail + comment threads
+
+Prompted by a screenshot comparison against TikTok's per-video action
+column. The important distinction that shaped this: TikTok has two
+separate icon systems, not one — a bottom tab bar for navigation (Home,
+Discover, Inbox, Profile) and a *vertical rail* for actions on the one
+piece of content currently on screen (follow, like, comment, bookmark,
+share). Conflating the two — e.g. moving Home/Favorites/Community/
+History/Profile into a floating rail — would have made navigation less
+discoverable for no benefit. Only genuinely per-post actions moved:
+Follow, Like, Comment, Favorite, Share. Wardrobe, Insights, and the
+Profile-level sharing toggle stayed exactly where they were — they're
+destinations/settings, not one-tap actions on a single card.
+
+`FeedCard` (Community feed) now overlays this rail on the bottom-right
+of each card's image, replacing the old inline owner-name row + top-of-
+card like/favorite buttons:
+- **Follow**: an avatar (first-letter badge — no profile-photo system
+  exists yet) with a small amber "+" overlay when not already following,
+  wired to the follow/unfollow endpoints that already existed from #30's
+  profile-graph work. Previously the only way to follow someone was to
+  open their full profile first; this is the missing one-tap version.
+- **Like / Favorite**: unchanged actions, just relocated into the rail.
+- **Share**: a plain `Share.share()` text message (owner name + occasion),
+  not the branded image-capture share ResultScreen uses for your own
+  completed read — building the full ShareCard flow per feed card would
+  mean mounting an off-screen capture view per list item purely for a
+  share action on someone else's read, not worth the cost for v1.
+- **Comment** (new): opens `CommentSheet`, a bottom sheet rather than a
+  new full-screen route, matching how Instagram/TikTok keep you in the
+  feed while reading/adding comments.
+
+New `Comment` model/table + `GET/POST /v1/outfits/{id}/comments` and
+`DELETE /v1/outfits/{id}/comments/{comment_id}`. Deliberately NOT like
+Like's others-only rule: an outfit's own owner CAN comment on it — every
+mainstream social app allows replying on your own post, and there's no
+reason unique to StyleSignal to forbid it. Visibility follows Favorite's
+rule instead (public, or your own), not Like's (others-only). Only the
+comment's own author can delete it — not the outfit's owner moderating
+someone else's comment on their post, which is a real gap (no
+report/moderation path yet) worth flagging rather than silently
+building a false sense of moderation coverage.
+
+`FeedItem` gained `comment_count` and `following_owner`, both correlated
+scalar subqueries following the exact pattern `like_count`/
+`liked_by_me`/`favorited_by_me` already established in #22/#29 — joining
+either table directly would fan out rows before the feed's `GROUP BY`.

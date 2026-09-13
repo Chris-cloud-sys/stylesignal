@@ -1151,3 +1151,41 @@ building a false sense of moderation coverage.
 scalar subqueries following the exact pattern `like_count`/
 `liked_by_me`/`favorited_by_me` already established in #22/#29 — joining
 either table directly would fan out rows before the feed's `GROUP BY`.
+
+---
+
+## 33. Comment sheet upgraded to match TikTok: replies, comment likes, no delete
+
+A direct follow-up to #32's first pass, prompted by a side-by-side against
+TikTok's actual comment sheet. Three things #32 didn't have:
+
+- **Replies, one level deep.** `Comment.parent_id` is a self-referential
+  FK; a reply's parent must itself be a top-level comment
+  (`invalid_parent_comment` if you try to reply to a reply) — matches how
+  TikTok actually renders threads, which are flattened one level, not
+  infinitely nested. `GET .../comments` now only returns top-level
+  comments (`parent_id IS NULL`), each carrying a `reply_count`; replies
+  load lazily from a separate `GET .../comments/{id}/replies` behind a
+  "View N replies" tap, not eagerly with the top-level list.
+- **Comment likes.** New `CommentLike` table (mirrors the outfit-level
+  `Like`), `POST`/`DELETE .../comments/{id}/likes`. `CommentOut` gained
+  `like_count`/`liked_by_me` the same way `FeedItem` already carries them
+  for the outfit itself.
+- **`CommentListResponse.total_count`** — the header needs "1,234
+  comments," which counts everything (top-level + replies), not just the
+  page of top-level comments actually returned.
+
+**The delete endpoint from #32 is gone, not hidden.** Explicitly
+requested: "remove delete comment from StyleSignal, we don't need it."
+`DELETE /v1/outfits/{id}/comments/{comment_id}` no longer exists — the
+mobile client has no function that could call it either. This reopens
+the moderation gap #32 already flagged (an outfit owner still has no way
+to remove an unwanted comment on their own post) with no near-term plan
+to close it — worth revisiting if reports of abuse actually show up,
+not before.
+
+Mobile: avatars are first-letter badges (same visual language as the
+feed rail's follow badge — no profile-photo system exists), used both
+per-commenter and next to the composer for the caller's own comment.
+The sheet's header shows the live total count and an explicit "X" close
+button, replacing #32's tap-the-backdrop-only dismissal.

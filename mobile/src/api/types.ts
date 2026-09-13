@@ -235,11 +235,22 @@ export interface Comment {
   body: string;
   created_at: string;
   is_mine: boolean;
+  like_count: number;
+  liked_by_me: boolean;
+  /** 0 for a reply — replies don't nest further. */
+  reply_count: number;
+}
+
+export interface CommentLikeResponse {
+  comment_id: string;
+  liked: boolean;
+  like_count: number;
 }
 
 export interface CommentListResponse {
   items: Comment[];
   cursor?: string | null;
+  total_count: number;
 }
 
 export interface LikeResponse {

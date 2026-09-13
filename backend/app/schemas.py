@@ -296,6 +296,9 @@ class FeedResponse(BaseModel):
 # --- Comment threads (SPEC+ — see docs/spec-deviations.md) -----------------
 class CommentCreateRequest(BaseModel):
     body: str = Field(min_length=1, max_length=500)
+    # One level deep only — must name an existing top-level comment on the
+    # same outfit (enforced in the router). Omitted for a top-level comment.
+    parent_id: Optional[uuid.UUID] = None
 
 
 class CommentOut(BaseModel):
@@ -304,14 +307,24 @@ class CommentOut(BaseModel):
     author_display_name: str
     body: str
     created_at: datetime
-    # Only ever true for the caller's own comment — the only one they're
-    # allowed to delete.
     is_mine: bool = False
+    like_count: int = 0
+    liked_by_me: bool = False
+    # Only meaningful on a top-level comment — 0 for a reply (replies don't
+    # nest further).
+    reply_count: int = 0
 
 
 class CommentListResponse(BaseModel):
     items: List[CommentOut]
     cursor: Optional[str] = None
+    total_count: int = 0
+
+
+class CommentLikeResponse(BaseModel):
+    comment_id: uuid.UUID
+    liked: bool
+    like_count: int
 
 
 class LikeResponse(BaseModel):

@@ -11,6 +11,7 @@ import { API_BASE_URL } from '../config';
 import type {
   ApiErrorBody,
   Comment,
+  CommentLikeResponse,
   CommentListResponse,
   FavoriteResponse,
   FeedResponse,
@@ -332,21 +333,41 @@ export function unfavoriteOutfit(outfitId: string): Promise<FavoriteResponse> {
 }
 
 // --- Comment threads (SPEC+, docs/spec-deviations.md) -----------------------
+// No delete function here — the endpoint was removed deliberately, not just
+// unused client-side.
 export function fetchComments(outfitId: string, cursor?: string | null): Promise<CommentListResponse> {
   const query = cursor ? `?limit=20&cursor=${encodeURIComponent(cursor)}` : '?limit=20';
   return request<CommentListResponse>(`/v1/outfits/${outfitId}/comments${query}`);
 }
 
-export function postComment(outfitId: string, body: string): Promise<Comment> {
+/** One level deep only — replies to a reply are not supported. */
+export function fetchReplies(
+  outfitId: string,
+  commentId: string,
+  cursor?: string | null,
+): Promise<CommentListResponse> {
+  const query = cursor ? `?limit=20&cursor=${encodeURIComponent(cursor)}` : '?limit=20';
+  return request<CommentListResponse>(`/v1/outfits/${outfitId}/comments/${commentId}/replies${query}`);
+}
+
+export function postComment(outfitId: string, body: string, parentId?: string): Promise<Comment> {
   return request<Comment>(`/v1/outfits/${outfitId}/comments`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ body }),
+    body: JSON.stringify(parentId ? { body, parent_id: parentId } : { body }),
   });
 }
 
-export function deleteComment(outfitId: string, commentId: string): Promise<void> {
-  return request<void>(`/v1/outfits/${outfitId}/comments/${commentId}`, { method: 'DELETE' });
+export function likeComment(outfitId: string, commentId: string): Promise<CommentLikeResponse> {
+  return request<CommentLikeResponse>(`/v1/outfits/${outfitId}/comments/${commentId}/likes`, {
+    method: 'POST',
+  });
+}
+
+export function unlikeComment(outfitId: string, commentId: string): Promise<CommentLikeResponse> {
+  return request<CommentLikeResponse>(`/v1/outfits/${outfitId}/comments/${commentId}/likes`, {
+    method: 'DELETE',
+  });
 }
 
 // --- Profiles / follow graph (SPEC+, docs/spec-deviations.md) --------------

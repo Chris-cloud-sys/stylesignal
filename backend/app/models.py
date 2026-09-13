@@ -470,12 +470,38 @@ class Comment(Base):
     author_id: Mapped[uuid.UUID] = mapped_column(
         Uuid, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
     )
+    # One level deep only — a reply's parent must itself be a top-level
+    # comment (enforced in the router, not the schema). Matches how TikTok
+    # actually renders threads: flattened one level, not infinite nesting.
+    parent_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        Uuid, ForeignKey("comments.id", ondelete="CASCADE"), nullable=True, index=True
+    )
     body: Mapped[str] = mapped_column(String(COMMENT_BODY_MAX_LENGTH), nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=_utcnow
     )
 
     outfit: Mapped[Outfit] = relationship(back_populates="comments")
+
+
+class CommentLike(Base):
+    """SPEC+ — a like on a single comment, separate from Like on an outfit."""
+
+    __tablename__ = "comment_likes"
+    __table_args__ = (
+        UniqueConstraint("comment_id", "user_id", name="uq_comment_like_comment_user"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=_uuid)
+    comment_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid, ForeignKey("comments.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=_utcnow
+    )
 
 
 class WardrobeItem(Base):

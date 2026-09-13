@@ -841,35 +841,104 @@ def test_empty_comment_is_rejected(auth_client):
     assert blocked.json()["error"]["code"] == "empty_comment"
 
 
-def test_author_can_delete_their_own_comment_but_not_others(client):
+def test_no_delete_endpoint_for_comments(auth_client):
+    # Deliberately removed, not just hidden client-side (docs/spec-deviations.md).
+    outfit_id = upload(auth_client, is_public="true")["outfit_id"]
+    wait_for_terminal(auth_client, outfit_id)
+    comment_id = auth_client.post(
+        "/v1/outfits/{0}/comments".format(outfit_id), json={"body": "nice fit"}
+    ).json()["comment_id"]
+
+    response = auth_client.delete("/v1/outfits/{0}/comments/{1}".format(outfit_id, comment_id))
+    assert response.status_code == 404
+
+
+def test_can_reply_to_a_top_level_comment(client):
     author = client.post(
         "/v1/auth/register",
-        json={"email": "comment-del-a-{0}@x.com".format(uuid.uuid4().hex[:8]), "password": "a-long-password"},
+        json={"email": "reply-a-{0}@x.com".format(uuid.uuid4().hex[:8]), "password": "a-long-password"},
     ).json()
     client.headers.update({"Authorization": "Bearer " + author["access_token"]})
     outfit_id = upload(client, is_public="true")["outfit_id"]
     wait_for_terminal(client, outfit_id)
+    top_level_id = client.post(
+        "/v1/outfits/{0}/comments".format(outfit_id), json={"body": "nice fit"}
+    ).json()["comment_id"]
 
-    commenter = client.post(
+    replier = client.post(
         "/v1/auth/register",
-        json={"email": "comment-del-b-{0}@x.com".format(uuid.uuid4().hex[:8]), "password": "a-long-password"},
+        json={"email": "reply-b-{0}@x.com".format(uuid.uuid4().hex[:8]), "password": "a-long-password"},
     ).json()
-    client.headers.update({"Authorization": "Bearer " + commenter["access_token"]})
+    client.headers.update({"Authorization": "Bearer " + replier["access_token"]})
+
+    reply = client.post(
+        "/v1/outfits/{0}/comments".format(outfit_id),
+        json={"body": "totally agree", "parent_id": top_level_id},
+    )
+    assert reply.status_code == 201, reply.text
+
+    # The reply does not show up in the top-level list...
+    top_level = client.get("/v1/outfits/{0}/comments".format(outfit_id)).json()
+    assert len(top_level["items"]) == 1
+    assert top_level["items"][0]["reply_count"] == 1
+    assert top_level["total_count"] == 2
+
+    # ...but does show up under the parent's replies.
+    replies = client.get(
+        "/v1/outfits/{0}/comments/{1}/replies".format(outfit_id, top_level_id)
+    ).json()
+    assert len(replies["items"]) == 1
+    assert replies["items"][0]["body"] == "totally agree"
+
+
+def test_cannot_reply_to_a_reply(auth_client):
+    outfit_id = upload(auth_client, is_public="true")["outfit_id"]
+    wait_for_terminal(auth_client, outfit_id)
+    top_level_id = auth_client.post(
+        "/v1/outfits/{0}/comments".format(outfit_id), json={"body": "one"}
+    ).json()["comment_id"]
+    reply_id = auth_client.post(
+        "/v1/outfits/{0}/comments".format(outfit_id),
+        json={"body": "two", "parent_id": top_level_id},
+    ).json()["comment_id"]
+
+    blocked = auth_client.post(
+        "/v1/outfits/{0}/comments".format(outfit_id),
+        json={"body": "three", "parent_id": reply_id},
+    )
+    assert blocked.status_code == 400
+    assert blocked.json()["error"]["code"] == "invalid_parent_comment"
+
+
+def test_can_like_and_unlike_a_comment(client):
+    author = client.post(
+        "/v1/auth/register",
+        json={"email": "clike-a-{0}@x.com".format(uuid.uuid4().hex[:8]), "password": "a-long-password"},
+    ).json()
+    client.headers.update({"Authorization": "Bearer " + author["access_token"]})
+    outfit_id = upload(client, is_public="true")["outfit_id"]
+    wait_for_terminal(client, outfit_id)
     comment_id = client.post(
         "/v1/outfits/{0}/comments".format(outfit_id), json={"body": "nice fit"}
     ).json()["comment_id"]
 
-    # The outfit's author cannot delete someone else's comment on it.
-    client.headers.update({"Authorization": "Bearer " + author["access_token"]})
-    blocked = client.delete("/v1/outfits/{0}/comments/{1}".format(outfit_id, comment_id))
-    assert blocked.status_code == 400
-    assert blocked.json()["error"]["code"] == "cannot_delete_others_comment"
+    liker = client.post(
+        "/v1/auth/register",
+        json={"email": "clike-b-{0}@x.com".format(uuid.uuid4().hex[:8]), "password": "a-long-password"},
+    ).json()
+    client.headers.update({"Authorization": "Bearer " + liker["access_token"]})
 
-    # The commenter can delete their own.
-    client.headers.update({"Authorization": "Bearer " + commenter["access_token"]})
-    removed = client.delete("/v1/outfits/{0}/comments/{1}".format(outfit_id, comment_id))
-    assert removed.status_code == 204
-    assert client.get("/v1/outfits/{0}/comments".format(outfit_id)).json()["items"] == []
+    liked = client.post("/v1/outfits/{0}/comments/{1}/likes".format(outfit_id, comment_id))
+    assert liked.status_code == 201
+    assert liked.json() == {"comment_id": comment_id, "liked": True, "like_count": 1}
+
+    item = client.get("/v1/outfits/{0}/comments".format(outfit_id)).json()["items"][0]
+    assert item["like_count"] == 1
+    assert item["liked_by_me"] is True
+
+    unliked = client.delete("/v1/outfits/{0}/comments/{1}/likes".format(outfit_id, comment_id))
+    assert unliked.status_code == 200
+    assert unliked.json()["like_count"] == 0
 
 
 def test_feed_reports_comment_count_and_following_owner(client):

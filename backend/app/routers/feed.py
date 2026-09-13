@@ -6,7 +6,7 @@ v2, so they ship complete and switched off. Set
 the §1 earn-by-rating hook on the free tier.
 """
 import uuid
-from typing import List, Optional
+from typing import Dict, List, Optional
 
 from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy import func, select
@@ -17,10 +17,21 @@ from ..config import get_settings
 from ..db import get_db
 from ..deps import get_current_user
 from ..errors import APIError, bad_request, not_found
-from ..models import COMMENT_BODY_MAX_LENGTH, Comment, Favorite, Follow, Like, Outfit, Rating, User
+from ..models import (
+    COMMENT_BODY_MAX_LENGTH,
+    Comment,
+    CommentLike,
+    Favorite,
+    Follow,
+    Like,
+    Outfit,
+    Rating,
+    User,
+)
 from ..quota import credit_rating, quota_out
 from ..schemas import (
     CommentCreateRequest,
+    CommentLikeResponse,
     CommentListResponse,
     CommentOut,
     FavoriteResponse,
@@ -300,10 +311,35 @@ def _like_count(db: Session, outfit_id: uuid.UUID) -> int:
 
 
 # --- Comments (SPEC+ — see docs/spec-deviations.md) -------------------------
+# No delete — deliberately left out (not merely hidden client-side). Threads
+# are one level deep (top-level comments + their replies), matching how
+# TikTok actually renders nested replies: flattened one level, not infinite.
+def _comment_out(
+    comment: Comment,
+    display_name: Optional[str],
+    email: str,
+    user: User,
+    like_count: int,
+    liked_by_me: int,
+    reply_count: int = 0,
+) -> CommentOut:
+    return CommentOut(
+        comment_id=comment.id,
+        author_id=comment.author_id,
+        author_display_name=(display_name or "").strip() or email.split("@")[0],
+        body=comment.body,
+        created_at=comment.created_at,
+        is_mine=comment.author_id == user.id,
+        like_count=like_count,
+        liked_by_me=bool(liked_by_me),
+        reply_count=reply_count,
+    )
+
+
 @router.get(
     "/v1/outfits/{outfit_id}/comments",
     response_model=CommentListResponse,
-    summary="A thread of comments on a shared outfit",
+    summary="Top-level comments on a shared outfit",
 )
 def list_comments(
     outfit_id: uuid.UUID,
@@ -315,25 +351,90 @@ def list_comments(
     _require_community_enabled()
     _commentable_outfit(db, outfit_id, user)
 
+    like_count_subq = (
+        select(func.count(CommentLike.id))
+        .where(CommentLike.comment_id == Comment.id)
+        .scalar_subquery()
+    )
+    liked_by_me_subq = (
+        select(func.count(CommentLike.id))
+        .where(CommentLike.comment_id == Comment.id, CommentLike.user_id == user.id)
+        .scalar_subquery()
+    )
+
     statement = (
-        select(Comment, User.display_name, User.email)
+        select(
+            Comment,
+            User.display_name,
+            User.email,
+            like_count_subq.label("like_count"),
+            liked_by_me_subq.label("liked_by_me"),
+        )
         .join(User, User.id == Comment.author_id)
-        .where(Comment.outfit_id == outfit_id)
+        .where(Comment.outfit_id == outfit_id, Comment.parent_id.is_(None))
+        .order_by(Comment.created_at.asc(), Comment.id.asc())
+        .offset(_decode_offset(cursor))
+        .limit(limit)
+    )
+    rows = list(db.execute(statement))
+
+    reply_counts = _reply_counts(db, [comment.id for comment, *_ in rows])
+    items = [
+        _comment_out(
+            comment, display_name, email, user, like_count, liked_by_me,
+            reply_count=reply_counts.get(comment.id, 0),
+        )
+        for comment, display_name, email, like_count, liked_by_me in rows
+    ]
+
+    total_count = db.execute(
+        select(func.count(Comment.id)).where(Comment.outfit_id == outfit_id)
+    ).scalar_one()
+
+    offset = _decode_offset(cursor) + len(items)
+    next_cursor = str(offset) if len(items) == limit else None
+    return CommentListResponse(items=items, cursor=next_cursor, total_count=total_count)
+
+
+@router.get(
+    "/v1/outfits/{outfit_id}/comments/{comment_id}/replies",
+    response_model=CommentListResponse,
+    summary="Replies to one top-level comment",
+)
+def list_replies(
+    outfit_id: uuid.UUID,
+    comment_id: uuid.UUID,
+    limit: int = Query(default=20, ge=1, le=50),
+    cursor: Optional[str] = Query(default=None),
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> CommentListResponse:
+    _require_community_enabled()
+    _commentable_outfit(db, outfit_id, user)
+
+    like_count_subq = (
+        select(func.count(CommentLike.id))
+        .where(CommentLike.comment_id == Comment.id)
+        .scalar_subquery()
+    )
+    liked_by_me_subq = (
+        select(func.count(CommentLike.id))
+        .where(CommentLike.comment_id == Comment.id, CommentLike.user_id == user.id)
+        .scalar_subquery()
+    )
+
+    statement = (
+        select(Comment, User.display_name, User.email, like_count_subq, liked_by_me_subq)
+        .join(User, User.id == Comment.author_id)
+        .where(Comment.outfit_id == outfit_id, Comment.parent_id == comment_id)
         .order_by(Comment.created_at.asc(), Comment.id.asc())
         .offset(_decode_offset(cursor))
         .limit(limit)
     )
     rows = list(db.execute(statement))
     items = [
-        CommentOut(
-            comment_id=comment.id,
-            author_id=comment.author_id,
-            author_display_name=(display_name or "").strip() or email.split("@")[0],
-            body=comment.body,
-            created_at=comment.created_at,
-            is_mine=comment.author_id == user.id,
-        )
-        for comment, display_name, email in rows
+        _comment_out(comment, display_name, email, user, like_count, liked_by_me)
+        for comment, display_name, email, like_count, liked_by_me in rows
     ]
 
     offset = _decode_offset(cursor) + len(items)
@@ -345,7 +446,7 @@ def list_comments(
     "/v1/outfits/{outfit_id}/comments",
     response_model=CommentOut,
     status_code=status.HTTP_201_CREATED,
-    summary="Add a comment to a shared outfit",
+    summary="Add a comment or a reply to a shared outfit",
 )
 def add_comment(
     outfit_id: uuid.UUID,
@@ -361,7 +462,24 @@ def add_comment(
     if not body:
         raise bad_request("empty_comment", "A comment cannot be empty.")
 
-    comment = Comment(outfit_id=outfit_id, author_id=user.id, body=body[:COMMENT_BODY_MAX_LENGTH])
+    if payload.parent_id is not None:
+        parent = db.get(Comment, payload.parent_id)
+        if (
+            parent is None
+            or parent.outfit_id != outfit_id
+            or parent.parent_id is not None
+        ):
+            raise bad_request(
+                "invalid_parent_comment",
+                "Replies can only be added to a top-level comment on this outfit.",
+            )
+
+    comment = Comment(
+        outfit_id=outfit_id,
+        author_id=user.id,
+        parent_id=payload.parent_id,
+        body=body[:COMMENT_BODY_MAX_LENGTH],
+    )
     db.add(comment)
     db.commit()
     db.refresh(comment)
@@ -377,27 +495,85 @@ def add_comment(
     )
 
 
-@router.delete(
-    "/v1/outfits/{outfit_id}/comments/{comment_id}",
-    status_code=status.HTTP_204_NO_CONTENT,
-    summary="Remove the caller's own comment",
+@router.post(
+    "/v1/outfits/{outfit_id}/comments/{comment_id}/likes",
+    response_model=CommentLikeResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Like a comment",
 )
-def delete_comment(
+def like_comment(
     outfit_id: uuid.UUID,
     comment_id: uuid.UUID,
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
-) -> None:
+) -> CommentLikeResponse:
     _require_community_enabled()
+    comment = _commentable_comment(db, outfit_id, comment_id)
 
+    existing = db.execute(
+        select(CommentLike).where(
+            CommentLike.comment_id == comment_id, CommentLike.user_id == user.id
+        )
+    ).scalar_one_or_none()
+    if existing is None:
+        db.add(CommentLike(comment_id=comment.id, user_id=user.id))
+        db.commit()
+
+    return CommentLikeResponse(
+        comment_id=comment_id, liked=True, like_count=_comment_like_count(db, comment.id)
+    )
+
+
+@router.delete(
+    "/v1/outfits/{outfit_id}/comments/{comment_id}/likes",
+    response_model=CommentLikeResponse,
+    summary="Unlike a comment",
+)
+def unlike_comment(
+    outfit_id: uuid.UUID,
+    comment_id: uuid.UUID,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> CommentLikeResponse:
+    _require_community_enabled()
+    comment = _commentable_comment(db, outfit_id, comment_id)
+
+    existing = db.execute(
+        select(CommentLike).where(
+            CommentLike.comment_id == comment_id, CommentLike.user_id == user.id
+        )
+    ).scalar_one_or_none()
+    if existing is not None:
+        db.delete(existing)
+        db.commit()
+
+    return CommentLikeResponse(
+        comment_id=comment_id, liked=False, like_count=_comment_like_count(db, comment.id)
+    )
+
+
+def _commentable_comment(db: Session, outfit_id: uuid.UUID, comment_id: uuid.UUID) -> Comment:
     comment = db.get(Comment, comment_id)
     if comment is None or comment.outfit_id != outfit_id:
         raise not_found("Comment")
-    if comment.author_id != user.id:
-        raise bad_request("cannot_delete_others_comment", "You can only remove your own comments.")
+    return comment
 
-    db.delete(comment)
-    db.commit()
+
+def _comment_like_count(db: Session, comment_id: uuid.UUID) -> int:
+    return db.execute(
+        select(func.count(CommentLike.id)).where(CommentLike.comment_id == comment_id)
+    ).scalar_one()
+
+
+def _reply_counts(db: Session, comment_ids: List[uuid.UUID]) -> Dict[uuid.UUID, int]:
+    if not comment_ids:
+        return {}
+    rows = db.execute(
+        select(Comment.parent_id, func.count(Comment.id))
+        .where(Comment.parent_id.in_(comment_ids))
+        .group_by(Comment.parent_id)
+    ).all()
+    return {parent_id: count for parent_id, count in rows}
 
 
 def _commentable_outfit(db: Session, outfit_id: uuid.UUID, user: User) -> Outfit:

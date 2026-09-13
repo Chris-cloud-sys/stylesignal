@@ -1233,3 +1233,46 @@ for a fresh reproduction, and it didn't recur. No log evidence, so
 nothing was changed to address it. If it comes back, the ask is the
 same as every other crash in this log: reproduce it while logcat is
 actively watching, not after the fact.
+
+---
+
+## 35. ResultScreen rail + real comment-sheet bugs, Profile redesign
+
+A direct side-by-side against TikTok surfaced two real bugs in #34's
+work (not new features — the same things #34 shipped, actually fixed)
+plus one intentional layout change.
+
+**ResultScreen now uses the same vertical rail as Community feed cards**,
+replacing the top-bar row of icons #34 added. Share moved into the rail
+too, so the separate full-width "Share this read" button was removed —
+it was a straight duplicate of the same action once Share had a rail
+icon. Follow is deliberately absent from this rail: ResultScreen only
+ever shows the caller's own outfit, and you can't follow yourself. Like
+still renders as a count only, never a toggle, same reasoning as before.
+
+**The comment sheet had a real positioning bug**, not a design choice:
+`backdrop` and the `KeyboardAvoidingView` sheet were plain siblings in a
+column layout, sized only by luck rather than guaranteed to overlay
+correctly — which is why the outfit's own text was visible through/above
+the sheet. Fixed by making both `position: absolute` against one
+full-screen wrapper, and by computing the sheet's height in actual
+pixels from `Dimensions.get('window')` rather than percentage strings —
+a percentage height only resolves reliably against a parent with a
+definite (non-content-based) height, which an absolutely-positioned,
+bottom-pinned wrapper doesn't have.
+
+**The keyboard covering the comment input was also a real bug**:
+`behavior={Platform.OS === 'ios' ? 'padding' : undefined}` meant Android
+got no keyboard-avoidance behavior at all. Changed to `'height'` on
+Android.
+
+**Profile screen redesigned into cards** (Account, Community,
+Scans, Sharing, More) inside a `ScrollView` — the missing Sign Out
+button was the same class of bug as the comment sheet: the screen had no
+scroll view, so once the avatar row (added in #34) pushed total content
+past one screen's height, everything below it, including Sign Out,
+was simply unreachable. Followers/following stayed on Profile
+(deliberately, not an oversight): there's no rail equivalent for your
+own profile, since you can't follow yourself — the actual fix was
+presenting the stat cleanly in its own card instead of a cramped
+text-button, not removing it.

@@ -1,12 +1,16 @@
-/** Profile — account info, quota, sharing default, and sign out (moved off Home). */
+/** Profile — account info, quota, sharing default, and sign out (moved off Home).
+ * Redesigned into cards (was one long clustered column) and wrapped in a
+ * ScrollView — without it, Sign Out silently fell off the bottom of the
+ * screen with no way to reach it once the avatar row pushed content past
+ * the visible height. */
 import * as ImagePicker from 'expo-image-picker';
 import React, { useEffect, useState } from 'react';
-import { ActivityIndicator, Alert, StyleSheet, Switch, Text, View } from 'react-native';
+import { ActivityIndicator, Alert, ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
 
 import { fetchMe, fetchUserProfile, removeAvatar, updateSharingDefault, uploadAvatar } from '../api/client';
 import type { Me } from '../api/types';
 import { Avatar, Button, SectionLabel } from '../components/primitives';
-import { colors, space, type } from '../theme';
+import { colors, radius, space, type } from '../theme';
 
 interface Props {
   onSignOut: () => void;
@@ -125,9 +129,9 @@ export function ProfileScreen({
       {loading ? (
         <ActivityIndicator color={colors.textMuted} style={styles.spinner} />
       ) : (
-        <View style={styles.body}>
+        <ScrollView contentContainerStyle={styles.body}>
           {me ? (
-            <View style={styles.block}>
+            <View style={styles.card}>
               <SectionLabel>Account</SectionLabel>
               <View style={styles.avatarRow}>
                 <Avatar name={me.user.display_name || me.user.email} uri={me.user.avatar_url} size={64} />
@@ -155,22 +159,28 @@ export function ProfileScreen({
                 </View>
               </View>
               <Text style={styles.email}>{me.user.email}</Text>
-              <Text style={styles.meta}>
-                {me.user.plan === 'pro' ? 'Pro' : 'Free'} plan
-              </Text>
-              {followStats ? (
-                <Button
-                  variant="quiet"
-                  label={`${followStats.follower_count} followers · ${followStats.following_count} following`}
-                  onPress={() => onOpenProfile(me.user.id)}
-                  style={styles.followStatsButton}
-                />
-              ) : null}
+              <Text style={styles.meta}>{me.user.plan === 'pro' ? 'Pro' : 'Free'} plan</Text>
+            </View>
+          ) : null}
+
+          {me && followStats ? (
+            <View style={styles.card}>
+              <SectionLabel>Community</SectionLabel>
+              <View style={styles.statsRow}>
+                <Stat label="Followers" value={followStats.follower_count} />
+                <Stat label="Following" value={followStats.following_count} />
+              </View>
+              <Button
+                variant="secondary"
+                label="View public profile"
+                onPress={() => onOpenProfile(me.user.id)}
+                style={styles.viewProfileButton}
+              />
             </View>
           ) : null}
 
           {me ? (
-            <View style={styles.block}>
+            <View style={styles.card}>
               <SectionLabel>Scans</SectionLabel>
               <Text style={styles.meta}>
                 {me.quota.scans_remaining === null
@@ -189,7 +199,8 @@ export function ProfileScreen({
           ) : null}
 
           {me ? (
-            <View style={styles.block}>
+            <View style={styles.card}>
+              <SectionLabel>Sharing</SectionLabel>
               <View style={styles.sharingRow}>
                 <View style={styles.sharingCopy}>
                   <Text style={styles.sharingTitle}>Share for community feedback</Text>
@@ -209,28 +220,34 @@ export function ProfileScreen({
             </View>
           ) : null}
 
-          <Button
-            variant="secondary"
-            label="Wardrobe"
-            onPress={onOpenWardrobe}
-            style={styles.insightsButton}
-          />
+          <View style={styles.card}>
+            <SectionLabel>More</SectionLabel>
+            <Button
+              variant="secondary"
+              label="Wardrobe"
+              onPress={onOpenWardrobe}
+              style={styles.linkButton}
+            />
+            <Button
+              variant="secondary"
+              label="Your style, so far"
+              onPress={onOpenInsights}
+              style={styles.linkButton}
+            />
+          </View>
 
-          <Button
-            variant="secondary"
-            label="Your style, so far"
-            onPress={onOpenInsights}
-            style={styles.wardrobeLinkSpacing}
-          />
-
-          <Button
-            variant="quiet"
-            label="Sign out"
-            onPress={onSignOut}
-            style={styles.signOut}
-          />
-        </View>
+          <Button variant="quiet" label="Sign out" onPress={onSignOut} style={styles.signOut} />
+        </ScrollView>
       )}
+    </View>
+  );
+}
+
+function Stat({ label, value }: { label: string; value: number }): React.ReactElement {
+  return (
+    <View style={styles.stat}>
+      <Text style={styles.statValue}>{value}</Text>
+      <Text style={styles.statLabel}>{label}</Text>
     </View>
   );
 }
@@ -244,19 +261,29 @@ const styles = StyleSheet.create({
   },
   title: { ...type.title, color: colors.text },
   spinner: { marginTop: space.xl },
-  body: { paddingHorizontal: space.lg },
-  block: { marginBottom: space.lg },
+  body: { paddingHorizontal: space.lg, paddingBottom: space.xxl },
+  card: {
+    backgroundColor: colors.surface,
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: space.lg,
+    marginBottom: space.lg,
+  },
   avatarRow: { flexDirection: 'row', alignItems: 'center', gap: space.md, marginTop: space.sm },
   avatarActions: { flexDirection: 'row' },
   avatarActionButton: { paddingHorizontal: 0, marginRight: space.md },
-  email: { ...type.bodyMedium, color: colors.text, marginTop: space.xs },
+  email: { ...type.bodyMedium, color: colors.text, marginTop: space.md },
   meta: { ...type.body, color: colors.textMuted, marginTop: space.xs },
   upgradeButton: { marginTop: space.md, alignSelf: 'flex-start' },
-  followStatsButton: { marginTop: space.sm, alignSelf: 'flex-start', paddingHorizontal: 0 },
-  sharingRow: { flexDirection: 'row', alignItems: 'center' },
+  statsRow: { flexDirection: 'row', gap: space.xl, marginTop: space.sm, marginBottom: space.md },
+  stat: { alignItems: 'flex-start' },
+  statValue: { ...type.title, color: colors.text },
+  statLabel: { ...type.meta, color: colors.textMuted, marginTop: 2 },
+  viewProfileButton: { alignSelf: 'flex-start' },
+  sharingRow: { flexDirection: 'row', alignItems: 'center', marginTop: space.sm },
   sharingCopy: { flex: 1, paddingRight: space.md },
   sharingTitle: { ...type.bodyMedium, color: colors.text },
-  insightsButton: { marginTop: space.lg },
-  wardrobeLinkSpacing: { marginTop: space.sm },
-  signOut: { marginTop: space.md },
+  linkButton: { marginTop: space.sm, alignSelf: 'stretch' },
+  signOut: { marginTop: space.sm, marginBottom: space.lg },
 });

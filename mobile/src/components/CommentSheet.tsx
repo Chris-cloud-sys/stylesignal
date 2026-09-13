@@ -11,6 +11,7 @@ import { Ionicons } from '@expo/vector-icons';
 import React, { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
+  Dimensions,
   FlatList,
   KeyboardAvoidingView,
   Modal,
@@ -26,6 +27,16 @@ import { fetchComments, fetchMe, fetchReplies, likeComment, postComment, unlikeC
 import type { Comment } from '../api/types';
 import { Avatar } from './primitives';
 import { colors, radius, space, type, weight } from '../theme';
+
+// Numeric, not percentage — a percentage height only resolves reliably
+// against a parent with its own definite (non-content-based) height, which
+// this sheet's parent chain (an absolutely-positioned, bottom-pinned View)
+// doesn't have. Computing pixels directly from the window is what actually
+// guarantees the sheet renders at a predictable height instead of
+// collapsing to content size with the backdrop showing through above it.
+const WINDOW_HEIGHT = Dimensions.get('window').height;
+const SHEET_MAX_HEIGHT = WINDOW_HEIGHT * 0.75;
+const SHEET_MIN_HEIGHT = WINDOW_HEIGHT * 0.45;
 
 interface Props {
   outfitId: string;
@@ -208,11 +219,17 @@ export function CommentSheet({ outfitId, visible, onClose, onCountChange }: Prop
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
-      <Pressable style={styles.backdrop} onPress={onClose} accessibilityRole="button" accessibilityLabel="Close comments" />
-      <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        style={styles.sheetWrap}
-      >
+      <View style={styles.overlay}>
+        <Pressable
+          style={styles.backdrop}
+          onPress={onClose}
+          accessibilityRole="button"
+          accessibilityLabel="Close comments"
+        />
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          style={styles.sheetWrap}
+        >
         <View style={styles.sheet}>
           <View style={styles.handle} />
           <View style={styles.titleRow}>
@@ -277,14 +294,21 @@ export function CommentSheet({ outfitId, visible, onClose, onCountChange }: Prop
             </Pressable>
           </View>
         </View>
-      </KeyboardAvoidingView>
+        </KeyboardAvoidingView>
+      </View>
     </Modal>
   );
 }
 
 const styles = StyleSheet.create({
-  backdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)' },
-  sheetWrap: { justifyContent: 'flex-end' },
+  // A plain column layout here (the pre-fix shape) relied on `backdrop`
+  // (flex:1) and `sheetWrap` stacking correctly by luck — absolute
+  // positioning both against this one full-screen wrapper is what
+  // actually guarantees the sheet stays pinned to the bottom with no gap
+  // showing the screen behind it through.
+  overlay: { flex: 1 },
+  backdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.4)' },
+  sheetWrap: { position: 'absolute', left: 0, right: 0, bottom: 0 },
   sheet: {
     backgroundColor: colors.background,
     borderTopLeftRadius: radius.lg,
@@ -292,8 +316,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: space.lg,
     paddingTop: space.sm,
     paddingBottom: space.lg,
-    maxHeight: '75%',
-    minHeight: '45%',
+    maxHeight: SHEET_MAX_HEIGHT,
+    minHeight: SHEET_MIN_HEIGHT,
   },
   handle: {
     alignSelf: 'center',

@@ -9,7 +9,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { File, Paths } from 'expo-file-system';
 import * as Sharing from 'expo-sharing';
 import React, { useRef, useState } from 'react';
-import { Image, Pressable, ScrollView, Share, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Image, Pressable, ScrollView, Share, StyleSheet, Text, View } from 'react-native';
 import { captureRef } from 'react-native-view-shot';
 
 import {
@@ -234,44 +234,6 @@ function Complete({
         <Pressable onPress={onDone} accessibilityRole="button">
           <Text style={styles.topBarLink}>Home</Text>
         </Pressable>
-        <View style={styles.topBarActions}>
-          {/* Owner-visible like count (§ SPEC+ likes) — present only when
-              the outfit is shared with the community; see get_outfit in
-              outfits.py, which only populates this for the outfit's
-              owner. No toggle here — you can't like your own outfit. */}
-          {typeof outfit.like_count === 'number' ? (
-            <Text style={styles.topBarLikes}>
-              ♥ {outfit.like_count} {outfit.like_count === 1 ? 'like' : 'likes'}
-            </Text>
-          ) : null}
-          {outfit.status === 'complete' ? (
-            <>
-              <Pressable
-                onPress={() => setCommentsOpen(true)}
-                style={styles.topBarIconButton}
-                accessibilityRole="button"
-                accessibilityLabel="View comments"
-              >
-                <Ionicons name="chatbubble-outline" size={20} color={colors.text} />
-                {commentCount > 0 ? (
-                  <Text style={styles.topBarIconCount}>{commentCount}</Text>
-                ) : null}
-              </Pressable>
-              <Pressable
-                onPress={() => void toggleFavorite()}
-                style={styles.topBarIconButton}
-                accessibilityRole="button"
-                accessibilityLabel={favorited ? 'Remove from favorites' : 'Add to favorites'}
-              >
-                <Ionicons
-                  name={favorited ? 'bookmark' : 'bookmark-outline'}
-                  size={20}
-                  color={favorited ? colors.accent : colors.text}
-                />
-              </Pressable>
-            </>
-          ) : null}
-        </View>
       </View>
 
       <CommentSheet
@@ -297,6 +259,56 @@ function Complete({
               <Text style={styles.heroVerdictPhrase}>{feedback.verdict_phrase}</Text>
               {feedback.verdict_subtitle ? (
                 <Text style={styles.heroVerdictSubtitle}>{feedback.verdict_subtitle}</Text>
+              ) : null}
+            </View>
+          ) : null}
+
+          {/* Same vertical rail as the Community feed cards, minus Follow
+              — this is always the caller's own outfit, and you can't
+              follow yourself. Like stays a count only, never a toggle,
+              same as before — you can't like your own outfit either. */}
+          {outfit.status === 'complete' ? (
+            <View style={styles.rail}>
+              {typeof outfit.like_count === 'number' ? (
+                <View style={styles.railAction}>
+                  <Text style={styles.railLikeGlyph}>♥</Text>
+                  <Text style={styles.railCount}>{outfit.like_count}</Text>
+                </View>
+              ) : null}
+              <Pressable
+                onPress={() => setCommentsOpen(true)}
+                style={styles.railAction}
+                accessibilityRole="button"
+                accessibilityLabel="View comments"
+              >
+                <Ionicons name="chatbubble-outline" size={24} color={colors.surface} />
+                <Text style={styles.railCount}>{commentCount}</Text>
+              </Pressable>
+              <Pressable
+                onPress={() => void toggleFavorite()}
+                style={styles.railAction}
+                accessibilityRole="button"
+                accessibilityLabel={favorited ? 'Remove from favorites' : 'Add to favorites'}
+              >
+                <Ionicons
+                  name={favorited ? 'bookmark' : 'bookmark-outline'}
+                  size={24}
+                  color={favorited ? colors.accent : colors.surface}
+                />
+              </Pressable>
+              {feedback ? (
+                <Pressable
+                  onPress={() => void handleShare()}
+                  style={styles.railAction}
+                  accessibilityRole="button"
+                  accessibilityLabel="Share this read"
+                >
+                  {sharing ? (
+                    <ActivityIndicator size="small" color={colors.surface} />
+                  ) : (
+                    <Ionicons name="arrow-redo-outline" size={24} color={colors.surface} />
+                  )}
+                </Pressable>
               ) : null}
             </View>
           ) : null}
@@ -329,16 +341,6 @@ function Complete({
             <FullRead feedback={feedback} garments={outfit.garments ?? []} />
           </Disclosure>
         </>
-      ) : null}
-
-      {feedback ? (
-        <Button
-          variant="secondary"
-          label="Share this read"
-          onPress={handleShare}
-          busy={sharing}
-          style={styles.shareButton}
-        />
       ) : null}
 
       {feedback ? (
@@ -692,10 +694,6 @@ const styles = StyleSheet.create({
     marginBottom: space.sm,
   },
   topBarLink: { ...type.meta, color: colors.textMuted },
-  topBarActions: { flexDirection: 'row', alignItems: 'center', gap: space.md },
-  topBarLikes: { ...type.meta, color: colors.accent },
-  topBarIconButton: { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  topBarIconCount: { ...type.meta, color: colors.textMuted },
   stage: { ...type.meta, color: colors.textMuted, marginBottom: space.md },
   wardrobeButton: { marginBottom: space.lg },
   // §7.8 the hero is a container for the photo AND the scrim-mounted
@@ -744,6 +742,25 @@ const styles = StyleSheet.create({
     color: colors.background,
     opacity: 0.85,
     marginTop: space.xs,
+  },
+  // Same vertical rail as the Community feed cards (FeedScreen), minus
+  // Follow — this is always the caller's own outfit.
+  rail: {
+    position: 'absolute',
+    right: space.sm,
+    bottom: space.md,
+    alignItems: 'center',
+    gap: space.md,
+  },
+  railAction: { alignItems: 'center' },
+  // §2.6: amber is the accent, never red.
+  railLikeGlyph: { fontSize: 26, color: colors.accent, lineHeight: 28 },
+  railCount: {
+    ...type.meta,
+    color: colors.surface,
+    marginTop: 2,
+    textShadowColor: 'rgba(0,0,0,0.4)',
+    textShadowRadius: 3,
   },
   pendingHint: { ...type.body, color: colors.textMuted, marginBottom: space.xl },
   skeletonBlock: { marginBottom: space.xl },
@@ -801,7 +818,6 @@ const styles = StyleSheet.create({
   quickReadBody: { flex: 1, gap: space.xs },
   quickRead: { ...type.body, fontSize: 17, lineHeight: 25, color: colors.text },
 
-  shareButton: { marginBottom: space.md },
   offscreen: { position: 'absolute', top: 0, left: -2000 },
 
   rereadBlock: { marginVertical: space.lg },

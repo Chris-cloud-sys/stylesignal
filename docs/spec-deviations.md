@@ -1380,3 +1380,38 @@ readable *synchronously*, before any other module's `StyleSheet.create`
 call runs — `expo-secure-store`'s sync `getItem`/`setItem` (not the
 `Async` variants used for auth tokens elsewhere in this app) made that
 possible without a new dependency.
+
+---
+
+## 38. Photo grid extended to Favorites, Wardrobe, and public profiles
+
+The History grid (entry #34's follow-up) turned out to be a generally
+applicable pattern, not a History-specific one — Favorites, Wardrobe,
+and a member's public profile (`UserProfileScreen`) were all the exact
+same row-list-of-thumbnails-with-an-always-visible-remove-button shape,
+just with different data underneath. Rather than copy History's grid
+code a third and fourth time, extracted `components/PhotoGrid.tsx`: the
+3-column layout, cell sizing, empty state, pagination, and the optional
+long-press-to-select overlay, parameterised over the item type. History
+itself was refactored onto it too, so there's one grid implementation,
+not five slightly-drifting ones.
+
+Selection/delete is opt-in per screen (`onLongPress`/`isSelected`/
+`selecting` are all optional props) — History and Wardrobe use it with a
+confirmation `Alert` (deleting a scan or a wardrobe entry isn't
+trivially reversible), Favorites uses it without one (unfavoriting is
+one tap to undo, matching the original single-button behaviour it
+replaced, which also had no confirmation), and `UserProfileScreen` omits
+it entirely — there's nothing to remove from someone else's public
+profile, so it's a plain read-only grid. `UserProfileScreen`'s existing
+avatar/stats/follow-button header moved into the grid's
+`ListHeaderComponent` rather than sitting above a separate `FlatList`,
+so it scrolls away with the grid the way an Instagram-style profile
+header does, instead of staying pinned above a second scrollable region.
+
+**Deliberately NOT converted: the Community feed.** Each feed card holds
+a 5-point rating form (coherence/occasion-fit/colour) alongside the
+vertical action rail — a small grid cell has nowhere to put five rating
+rows. That's a fundamentally different interaction (engage with one
+outfit at a time), not a "browse many thumbnails quickly" job, so it
+keeps its own full-width card layout.

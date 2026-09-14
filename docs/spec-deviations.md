@@ -1460,7 +1460,17 @@ actual key rows — plausibly not fully reflected in the height
 `keyboardDidShow` reports, which would explain the sheet rendering
 slightly into space the keyboard's own chrome was still occupying.
 Rather than chase an exact per-keyboard/device measurement, added a
-flat `KEYBOARD_GAP` (24px) on top of the reported height, both for the
-sheet's upward offset and its `maxHeight` ceiling — simpler and more
-robust than trying to be pixel-exact against a value that isn't fully
-trustworthy across keyboards.
+flat `KEYBOARD_GAP` on top of the reported height, both for the sheet's
+upward offset and its `maxHeight` ceiling — simpler and more robust than
+trying to be pixel-exact against a value that isn't fully trustworthy
+across keyboards.
+
+**Second follow-up, from a third round of device testing**: 24px fixed
+the *visual* legibility (entry above), but tapping "Post" was landing on
+the keyboard's own suggestion strip instead of the button — the gap was
+real but still too tight for a *touch target*, not just for reading.
+Raised `KEYBOARD_GAP` to 56px. The lesson worth naming: "the text is now
+readable" and "the button next to it is reliably tappable" turned out to
+be two different bars to clear, not one — confirmed by two separate
+rounds of on-device evidence, not assumed from the first fix looking
+right.

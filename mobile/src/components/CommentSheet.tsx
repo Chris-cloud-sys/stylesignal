@@ -41,9 +41,13 @@ const SHEET_MIN_HEIGHT = 200;
 // keys) render extra chrome that isn't fully reflected in the height
 // `keyboardDidShow` reports, so pinning the composer at exactly that
 // reported height still left it flush against the keyboard's visible top
-// edge with no visible gap. A fixed margin is simpler and more robust
-// than trying to measure that discrepancy precisely per-keyboard/device.
-const KEYBOARD_GAP = 24;
+// edge. A fixed margin is simpler and more robust than trying to measure
+// that discrepancy precisely per-keyboard/device. First tried 24px —
+// still close enough that a tap on "Post" could land on the keyboard's
+// own suggestion strip instead of the button (confirmed on-device: taps
+// were landing on the keyboard, not Post). 56px gives real touch-target
+// clearance, not just visual clearance.
+const KEYBOARD_GAP = 56;
 
 /** Tracks the keyboard's own height directly rather than leaning on
  * `KeyboardAvoidingView`'s heuristics — those fought against `sheet`'s

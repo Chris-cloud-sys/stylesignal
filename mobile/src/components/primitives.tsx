@@ -47,7 +47,7 @@ export function Avatar({
 
 const styles_avatar = StyleSheet.create({
   badge: { backgroundColor: colors.accent, alignItems: 'center', justifyContent: 'center' },
-  letter: { color: colors.background, fontWeight: weight.medium },
+  letter: { color: colors.onAccent, fontWeight: weight.medium },
 });
 
 // --- Button ----------------------------------------------------------------

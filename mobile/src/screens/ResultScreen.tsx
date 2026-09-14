@@ -281,7 +281,7 @@ function Complete({
                 accessibilityRole="button"
                 accessibilityLabel="View comments"
               >
-                <Ionicons name="chatbubble-outline" size={24} color={colors.surface} />
+                <Ionicons name="chatbubble-outline" size={24} color={colors.onPhoto} />
                 <Text style={styles.railCount}>{commentCount}</Text>
               </Pressable>
               <Pressable
@@ -293,7 +293,7 @@ function Complete({
                 <Ionicons
                   name={favorited ? 'bookmark' : 'bookmark-outline'}
                   size={24}
-                  color={favorited ? colors.accent : colors.surface}
+                  color={favorited ? colors.accent : colors.onPhoto}
                 />
               </Pressable>
               {feedback ? (
@@ -304,9 +304,9 @@ function Complete({
                   accessibilityLabel="Share this read"
                 >
                   {sharing ? (
-                    <ActivityIndicator size="small" color={colors.surface} />
+                    <ActivityIndicator size="small" color={colors.onPhoto} />
                   ) : (
-                    <Ionicons name="arrow-redo-outline" size={24} color={colors.surface} />
+                    <Ionicons name="arrow-redo-outline" size={24} color={colors.onPhoto} />
                   )}
                 </Pressable>
               ) : null}
@@ -724,7 +724,7 @@ const styles = StyleSheet.create({
     paddingTop: space.lg,
     paddingBottom: space.lg,
   },
-  heroOccasion: { ...type.meta, color: colors.background, marginBottom: space.xs },
+  heroOccasion: { ...type.meta, color: colors.onPhoto, marginBottom: space.xs },
   // Deliberately bigger than the shared `type.display` token (used elsewhere
   // for the sign-in wordmark) — this is a targeted push for the verdict's
   // visual weight, not a change to the type scale generally.
@@ -733,13 +733,13 @@ const styles = StyleSheet.create({
     lineHeight: 40,
     fontWeight: weight.regular,
     letterSpacing: -0.3,
-    color: colors.background,
+    color: colors.onPhoto,
   },
   heroVerdictSubtitle: {
     ...type.body,
     fontSize: 17,
     lineHeight: 24,
-    color: colors.background,
+    color: colors.onPhoto,
     opacity: 0.85,
     marginTop: space.xs,
   },
@@ -757,7 +757,7 @@ const styles = StyleSheet.create({
   railLikeGlyph: { fontSize: 26, color: colors.accent, lineHeight: 28 },
   railCount: {
     ...type.meta,
-    color: colors.surface,
+    color: colors.onPhoto,
     marginTop: 2,
     textShadowColor: 'rgba(0,0,0,0.4)',
     textShadowRadius: 3,

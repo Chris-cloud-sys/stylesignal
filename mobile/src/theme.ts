@@ -21,15 +21,63 @@
  *   3. STILL TRUE: white-label — a tenant's `primary_color` replaces
  *      `accent` and nothing else.
  *
- * Light/dark resolution happens ONCE, at module load (`Appearance.
- * getColorScheme()`), not live — every screen already reads plain
- * `colors.X` values baked into a module-scope `StyleSheet.create(...)`,
- * not a hook, so there is nothing to re-render if the OS theme changes
- * while the app is already open. A relaunch picks up the new OS setting.
- * Wiring true live-switching would mean moving every screen's stylesheet
- * into a hook — a much larger refactor, deliberately out of scope here.
+ * Light/dark resolution happens ONCE, at module load, not live — every
+ * screen already reads plain `colors.X` values baked into a module-scope
+ * `StyleSheet.create(...)`, not a hook, so there is nothing to re-render
+ * if the theme changes while the app is already open. Wiring true live-
+ * switching would mean moving every screen's stylesheet into a hook — a
+ * much larger refactor, deliberately out of scope here.
+ *
+ * A user's explicit Light/Dark/System choice (Profile → Appearance) is
+ * still applied without a manual restart, though: `setThemePreference`
+ * writes the choice with `SecureStore.setItem` (the synchronous variant,
+ * not `setItemAsync` — deliberately, so the value is readable
+ * synchronously below, before any other module's `StyleSheet.create`
+ * call runs) and then calls `Updates.reloadAsync()`, which restarts the
+ * JS engine against the same installed bundle. That re-runs every
+ * module's top-level code from scratch, including this file, which is
+ * what actually makes the new preference take effect everywhere at once
+ * — not a live re-render, a full (near-instant) reload.
  */
 import { Appearance } from 'react-native';
+import * as SecureStore from 'expo-secure-store';
+
+export type ThemePreference = 'light' | 'dark' | 'system';
+
+const THEME_PREFERENCE_KEY = 'stylesignal.theme_preference';
+
+/** Synchronous on purpose — see the module header. */
+function readStoredPreference(): ThemePreference {
+  try {
+    const value = SecureStore.getItem(THEME_PREFERENCE_KEY);
+    if (value === 'light' || value === 'dark') return value;
+  } catch {
+    // SecureStore unavailable (e.g. a platform without a keychain) —
+    // fall back to following the OS.
+  }
+  return 'system';
+}
+
+export function getThemePreference(): ThemePreference {
+  return readStoredPreference();
+}
+
+/** Persists the choice and reloads immediately so it actually takes
+ * effect — see the module header for why a reload, not a live update. */
+export async function setThemePreference(preference: ThemePreference): Promise<void> {
+  try {
+    if (preference === 'system') {
+      await SecureStore.deleteItemAsync(THEME_PREFERENCE_KEY);
+    } else {
+      SecureStore.setItem(THEME_PREFERENCE_KEY, preference);
+    }
+  } catch {
+    // Best-effort — worst case the choice doesn't persist and the app
+    // falls back to following the OS on next launch.
+  }
+  const Updates = await import('expo-updates');
+  await Updates.reloadAsync();
+}
 
 const lightPalette = {
   background: '#FAFAFA', // Crisp Chalk White
@@ -58,13 +106,16 @@ const darkPalette = {
   badgeBackground: '#152736',
 } as const;
 
-const scheme = Appearance.getColorScheme();
-const active = scheme === 'dark' ? darkPalette : lightPalette;
+// An explicit stored choice wins outright; "system" (the default, nothing
+// stored yet) falls back to the OS setting exactly as before.
+const preference = readStoredPreference();
+const resolvedScheme = preference === 'system' ? Appearance.getColorScheme() : preference;
+const active = resolvedScheme === 'dark' ? darkPalette : lightPalette;
 
 /** Resolved once at launch, same as `colors` — see the module header for
  * why this isn't live. Lets App.tsx pick a status-bar icon style that's
  * actually visible against the resolved background. */
-export const isDarkMode = scheme === 'dark';
+export const isDarkMode = resolvedScheme === 'dark';
 
 export const colors = {
   background: active.background,
@@ -86,6 +137,18 @@ export const colors = {
    * of those files; centralised here so it follows the accent and the
    * light/dark mode instead of drifting out of sync with it. */
   badgeBackground: active.badgeBackground,
+  /** Fixed, NOT theme-dependent — text/icons rendered over a photo's own
+   * dark scrim (the hero verdict overlay, the rail icons on a feed/read
+   * photo). The scrim itself is a hardcoded dark overlay regardless of
+   * app theme, because it's providing contrast against an arbitrary
+   * photo, not against the app's chrome — so the text on it needs a
+   * fixed light colour too. Before this token existed, those spots used
+   * `colors.background`/`colors.surface` as a stand-in for "light
+   * colour," which broke the moment those tokens became theme-dependent:
+   * in dark mode they resolved to near-black, rendering as dark text on
+   * a dark photo scrim — illegible. See docs/spec-deviations.md.
+   */
+  onPhoto: '#F2F2F2',
 } as const;
 
 export const space = {

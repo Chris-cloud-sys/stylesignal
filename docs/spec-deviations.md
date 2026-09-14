@@ -1336,3 +1336,47 @@ stale warm-amber badge fill sitting on top of the new cool-toned palette
 in every one of those spots. Centralised as `colors.badgeBackground`
 (light: pale sky tint; dark: a muted deep-cyan-tinted surface, distinct
 from the plain dark `surface` token so badges still read as badges).
+
+---
+
+## 37. Real dark-mode bug from #36, plus an explicit Light/Dark/System toggle
+
+Two follow-ups, from a real device screenshot in dark mode: the hero
+verdict text and the feed/read rail's icons were nearly illegible —
+dark text/icons sitting on a dark photo overlay.
+
+**Root cause**: several spots used `colors.background` or
+`colors.surface` as a stand-in for "a light colour that shows up against
+a dark photo scrim," which was safe back when those tokens were always
+light (the old single-mode Bone palette) but broke the moment they
+became theme-dependent — in dark mode they resolve to near-black, so
+"light text on a dark scrim" became "near-black text on a dark scrim."
+Fixed by adding `colors.onPhoto`: a fixed value, deliberately NOT
+theme-dependent, because the photo scrim itself is a hardcoded dark
+overlay regardless of app theme — it's providing contrast against an
+arbitrary photo, not against the app's chrome, so the text on it needs a
+fixed colour too, the same way `ShareCard.tsx` is deliberately not
+theme-linked. Applied everywhere the bug actually existed: `ResultScreen`
+and `FeedScreen`'s hero/rail text and icons, and the History grid's
+processing-spinner badge. One related mistake fixed alongside it:
+`Avatar`'s letter used `colors.background` where it actually meant
+"text on the accent-coloured badge" — corrected to `colors.onAccent`
+(harmless today only because both tokens happened to be identical in
+dark mode; not the correct token regardless).
+
+**The Light/Dark/System toggle** (Profile → Appearance) exists because
+"only resolves once at launch, from the OS setting" (entry #36) turned
+out not to be enough — a phone already in dark mode gives no way to
+preview or force light, and vice versa. True live-switching still isn't
+built (would mean moving every screen's `StyleSheet.create(...)` off
+module scope into a hook — the same large refactor #36 already declined
+to take on). Instead: `expo-updates` was added specifically for
+`Updates.reloadAsync()`, which restarts the JS engine against the
+already-installed bundle — a full reload, not a live re-render, but
+fast and effective, since it re-runs every module's top-level code
+(including `theme.ts`) from scratch against the newly stored preference.
+The one real constraint this created: the stored preference has to be
+readable *synchronously*, before any other module's `StyleSheet.create`
+call runs — `expo-secure-store`'s sync `getItem`/`setItem` (not the
+`Async` variants used for auth tokens elsewhere in this app) made that
+possible without a new dependency.

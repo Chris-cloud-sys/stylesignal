@@ -182,7 +182,7 @@ export function HistoryScreen({ onOpen }: Props): React.ReactElement {
                   {item.status === 'failed' ? (
                     <Ionicons name="alert-circle" size={14} color={colors.systemError} />
                   ) : (
-                    <ActivityIndicator size="small" color={colors.background} />
+                    <ActivityIndicator size="small" color={colors.onPhoto} />
                   )}
                 </View>
               ) : null}

@@ -312,7 +312,7 @@ function FeedCard({
                 accessibilityLabel={`Follow ${item.owner_display_name}`}
                 hitSlop={6}
               >
-                <Ionicons name="add" size={12} color={colors.background} />
+                <Ionicons name="add" size={12} color={colors.onAccent} />
               </Pressable>
             ) : null}
           </Pressable>
@@ -335,7 +335,7 @@ function FeedCard({
             accessibilityRole="button"
             accessibilityLabel="View comments"
           >
-            <Ionicons name="chatbubble-outline" size={24} color={colors.surface} />
+            <Ionicons name="chatbubble-outline" size={24} color={colors.onPhoto} />
             <Text style={styles.railCount}>{commentCount}</Text>
           </Pressable>
 
@@ -348,7 +348,7 @@ function FeedCard({
             <Ionicons
               name={favorited ? 'bookmark' : 'bookmark-outline'}
               size={24}
-              color={favorited ? colors.accent : colors.surface}
+              color={favorited ? colors.accent : colors.onPhoto}
             />
           </Pressable>
 
@@ -358,7 +358,7 @@ function FeedCard({
             accessibilityRole="button"
             accessibilityLabel="Share this read"
           >
-            <Ionicons name="arrow-redo-outline" size={24} color={colors.surface} />
+            <Ionicons name="arrow-redo-outline" size={24} color={colors.onPhoto} />
           </Pressable>
         </View>
       </View>
@@ -501,7 +501,7 @@ const styles = StyleSheet.create({
   railAvatarBorder: {
     borderRadius: radius.pill,
     borderWidth: 1.5,
-    borderColor: colors.surface,
+    borderColor: colors.onPhoto,
     overflow: 'hidden',
   },
   railFollowBadge: {
@@ -512,18 +512,18 @@ const styles = StyleSheet.create({
     borderRadius: radius.pill,
     backgroundColor: colors.accent,
     borderWidth: 1.5,
-    borderColor: colors.surface,
+    borderColor: colors.onPhoto,
     alignItems: 'center',
     justifyContent: 'center',
   },
   railAction: { alignItems: 'center' },
   // §2.6: amber is the accent, never red — a liked heart stays on-brand
   // rather than reaching for the conventional red fill.
-  railLikeGlyph: { fontSize: 26, color: colors.surface, lineHeight: 28 },
+  railLikeGlyph: { fontSize: 26, color: colors.onPhoto, lineHeight: 28 },
   railLikeGlyphActive: { color: colors.accent },
   railCount: {
     ...type.meta,
-    color: colors.surface,
+    color: colors.onPhoto,
     marginTop: 2,
     textShadowColor: 'rgba(0,0,0,0.4)',
     textShadowRadius: 3,

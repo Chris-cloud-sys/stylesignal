@@ -32,7 +32,8 @@
           "cameraPermission": "StyleSignal uses your camera to photograph the outfit you want described."
         }
       ],
-      "expo-font"
+      "expo-font",
+      "expo-updates"
     ],
     "extra": {
       "apiBaseUrl": "https://stylesignal-backend.onrender.com",

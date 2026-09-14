@@ -5,12 +5,13 @@
  * the visible height. */
 import * as ImagePicker from 'expo-image-picker';
 import React, { useEffect, useState } from 'react';
-import { ActivityIndicator, Alert, ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
+import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
 
 import { fetchMe, fetchUserProfile, removeAvatar, updateSharingDefault, uploadAvatar } from '../api/client';
 import type { Me } from '../api/types';
 import { Avatar, Button, SectionLabel } from '../components/primitives';
-import { colors, radius, space, type } from '../theme';
+import { colors, getThemePreference, radius, setThemePreference, space, type, weight } from '../theme';
+import type { ThemePreference } from '../theme';
 
 interface Props {
   onSignOut: () => void;
@@ -38,6 +39,8 @@ export function ProfileScreen({
     follower_count: number;
     following_count: number;
   } | null>(null);
+  const [themePreference, setThemePreferenceState] = useState<ThemePreference>(getThemePreference);
+  const [themeBusy, setThemeBusy] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -117,6 +120,23 @@ export function ProfileScreen({
       Alert.alert('Could not remove your profile picture', 'Try again in a moment.');
     } finally {
       setAvatarBusy(false);
+    }
+  };
+
+  // Applying this reloads the app almost immediately (see theme.ts's
+  // module header for why) — no need to update local state after the
+  // call succeeds, since this screen is about to be torn down and
+  // rebuilt with the new colours anyway.
+  const changeTheme = async (preference: ThemePreference): Promise<void> => {
+    if (themeBusy || preference === themePreference) return;
+    setThemeBusy(true);
+    setThemePreferenceState(preference);
+    try {
+      await setThemePreference(preference);
+    } catch {
+      setThemeBusy(false);
+      setThemePreferenceState(themePreference);
+      Alert.alert('Could not switch appearance', 'Try again in a moment.');
     }
   };
 
@@ -221,6 +241,36 @@ export function ProfileScreen({
           ) : null}
 
           <View style={styles.card}>
+            <SectionLabel>Appearance</SectionLabel>
+            <View style={styles.themeRow}>
+              {(
+                [
+                  { value: 'system', label: 'System' },
+                  { value: 'light', label: 'Light' },
+                  { value: 'dark', label: 'Dark' },
+                ] as const
+              ).map((option) => {
+                const selected = option.value === themePreference;
+                return (
+                  <Pressable
+                    key={option.value}
+                    onPress={() => void changeTheme(option.value)}
+                    disabled={themeBusy}
+                    style={[styles.themeOption, selected && styles.themeOptionSelected]}
+                    accessibilityRole="button"
+                    accessibilityState={{ selected }}
+                  >
+                    <Text style={[styles.themeOptionLabel, selected && styles.themeOptionLabelSelected]}>
+                      {option.label}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </View>
+            {themeBusy ? <ActivityIndicator color={colors.textMuted} style={styles.themeSpinner} /> : null}
+          </View>
+
+          <View style={styles.card}>
             <SectionLabel>More</SectionLabel>
             <Button
               variant="secondary"
@@ -286,4 +336,21 @@ const styles = StyleSheet.create({
   sharingTitle: { ...type.bodyMedium, color: colors.text },
   linkButton: { marginTop: space.sm, alignSelf: 'stretch' },
   signOut: { marginTop: space.sm, marginBottom: space.lg },
+  themeRow: {
+    flexDirection: 'row',
+    gap: space.sm,
+    marginTop: space.sm,
+  },
+  themeOption: {
+    flex: 1,
+    alignItems: 'center',
+    paddingVertical: space.sm,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  themeOptionSelected: { borderColor: colors.accent, backgroundColor: colors.badgeBackground },
+  themeOptionLabel: { ...type.body, color: colors.textMuted },
+  themeOptionLabelSelected: { color: colors.accent, fontWeight: weight.medium },
+  themeSpinner: { marginTop: space.md },
 });

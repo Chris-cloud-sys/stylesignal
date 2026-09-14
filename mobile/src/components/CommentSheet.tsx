@@ -13,9 +13,8 @@ import {
   ActivityIndicator,
   Dimensions,
   FlatList,
-  KeyboardAvoidingView,
+  Keyboard,
   Modal,
-  Platform,
   Pressable,
   StyleSheet,
   Text,
@@ -36,7 +35,29 @@ import { colors, radius, space, type, weight } from '../theme';
 // collapsing to content size with the backdrop showing through above it.
 const WINDOW_HEIGHT = Dimensions.get('window').height;
 const SHEET_MAX_HEIGHT = WINDOW_HEIGHT * 0.75;
-const SHEET_MIN_HEIGHT = WINDOW_HEIGHT * 0.45;
+const SHEET_MIN_HEIGHT = 200;
+
+/** Tracks the keyboard's own height directly rather than leaning on
+ * `KeyboardAvoidingView`'s heuristics — those fought against `sheet`'s
+ * own `maxHeight`/`minHeight` (a fixed 45% of the window) and pushed the
+ * composer below the visible area instead of shrinking the comment list
+ * to make room for it. Slides the whole sheet up by the keyboard's exact
+ * height and shrinks its own max height to match, so the composer always
+ * stays pinned just above the keyboard. */
+function useKeyboardHeight(): number {
+  const [height, setHeight] = useState(0);
+  useEffect(() => {
+    const show = Keyboard.addListener('keyboardDidShow', (event) =>
+      setHeight(event.endCoordinates.height),
+    );
+    const hide = Keyboard.addListener('keyboardDidHide', () => setHeight(0));
+    return () => {
+      show.remove();
+      hide.remove();
+    };
+  }, []);
+  return height;
+}
 
 interface Props {
   outfitId: string;
@@ -47,6 +68,7 @@ interface Props {
 }
 
 export function CommentSheet({ outfitId, visible, onClose, onCountChange }: Props): React.ReactElement {
+  const keyboardHeight = useKeyboardHeight();
   const [items, setItems] = useState<Comment[]>([]);
   const [totalCount, setTotalCount] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -226,11 +248,13 @@ export function CommentSheet({ outfitId, visible, onClose, onCountChange }: Prop
           accessibilityRole="button"
           accessibilityLabel="Close comments"
         />
-        <KeyboardAvoidingView
-          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-          style={styles.sheetWrap}
+        <View style={[styles.sheetWrap, { bottom: keyboardHeight }]}>
+        <View
+          style={[
+            styles.sheet,
+            { maxHeight: Math.min(SHEET_MAX_HEIGHT, WINDOW_HEIGHT - keyboardHeight - space.xl) },
+          ]}
         >
-        <View style={styles.sheet}>
           <View style={styles.handle} />
           <View style={styles.titleRow}>
             <Text style={styles.title}>{totalCount} {totalCount === 1 ? 'comment' : 'comments'}</Text>
@@ -294,7 +318,7 @@ export function CommentSheet({ outfitId, visible, onClose, onCountChange }: Prop
             </Pressable>
           </View>
         </View>
-        </KeyboardAvoidingView>
+        </View>
       </View>
     </Modal>
   );
@@ -335,7 +359,11 @@ const styles = StyleSheet.create({
   },
   title: { ...type.bodyMedium, color: colors.text },
   spinner: { marginTop: space.xl },
-  list: { flexGrow: 0 },
+  // flexShrink (not flexGrow: 0) — this is the one element that should
+  // give up space first when the sheet's own maxHeight shrinks to make
+  // room for the keyboard, so the composer below it never gets pushed
+  // out of view.
+  list: { flexShrink: 1 },
   empty: { ...type.body, color: colors.textMuted, paddingVertical: space.lg },
   error: { ...type.meta, color: colors.systemError, marginBottom: space.sm },
 

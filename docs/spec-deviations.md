@@ -1415,3 +1415,38 @@ vertical action rail — a small grid cell has nowhere to put five rating
 rows. That's a fundamentally different interaction (engage with one
 outfit at a time), not a "browse many thumbnails quickly" job, so it
 keeps its own full-width card layout.
+
+---
+
+## 39. The real comment-sheet keyboard bug — KeyboardAvoidingView vs. a fixed minHeight
+
+Entry #35's Android keyboard fix (switching `KeyboardAvoidingView`'s
+`behavior` from `undefined` to `'height'`) turned out to be necessary
+but not sufficient — a real device screenshot showed the composer
+(avatar, text input, Post) missing entirely once the keyboard opened,
+not just covered by it.
+
+**Root cause**: `sheet` had `minHeight: SHEET_MIN_HEIGHT` (45% of the
+window), sized that way so an empty or short comment list didn't render
+as a tiny, cramped sheet. `KeyboardAvoidingView`'s `'height'` mode works
+by shrinking its own measured height to make room for the keyboard —
+but `sheet` is a *child* of that view with its own competing `minHeight`
+constraint, which refused to shrink below 45% of the screen regardless
+of how little space was actually left above the keyboard. The sheet
+stayed too tall for the visible area, and its bottom content (the
+composer) rendered below the visible viewport as a result.
+
+Fixed by dropping `KeyboardAvoidingView` entirely in favour of manually
+tracking the keyboard's own height (`Keyboard.addListener
+('keyboardDidShow'/'keyboardDidHide', ...)`, reading
+`event.endCoordinates.height`) and driving two things directly from it:
+the whole sheet slides up by exactly that height (`bottom:
+keyboardHeight`), and the sheet's own `maxHeight` is recomputed against
+the actually-available space (`window height − keyboard height`) rather
+than a fixed percentage. `minHeight` dropped from 45% of the window to a
+small fixed floor (200px) — just enough to avoid a jarringly tiny sheet
+on an empty list, small enough to never fight the keyboard again. The
+comment `FlatList` itself changed from `flexGrow: 0` to `flexShrink: 1`
+— it's now the one element that gives up space first as the sheet
+shrinks, which is what actually keeps the composer pinned and visible
+regardless of how much of the screen the keyboard takes.

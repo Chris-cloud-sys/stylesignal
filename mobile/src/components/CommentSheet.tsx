@@ -331,7 +331,15 @@ export function CommentSheet({ outfitId, visible, onClose, onCountChange }: Prop
               multiline
             />
             <Pressable
-              onPress={() => void send()}
+              // onPressIn, not onPress: tapping this button blurs the
+              // TextInput, which dismisses the keyboard as a side effect —
+              // and the moment that starts, the sheet's own position
+              // (pinned relative to keyboard height) shifts down. onPress
+              // only fires on release, by which point this button has
+              // already moved out from under the finger, so the tap
+              // silently misses. onPressIn fires on touch-down, before any
+              // of that reflow can happen.
+              onPressIn={() => void send()}
               disabled={!draft.trim() || sending}
               accessibilityRole="button"
               accessibilityLabel="Post comment"

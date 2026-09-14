@@ -1474,3 +1474,21 @@ readable" and "the button next to it is reliably tappable" turned out to
 be two different bars to clear, not one — confirmed by two separate
 rounds of on-device evidence, not assumed from the first fix looking
 right.
+
+**Third follow-up**: the 56px gap fixed the mis-tap theory (confirmed —
+spacing was no longer the complaint), but "Post" still didn't work —
+this time the keyboard visibly collapsed instead. That rules out a
+stray tap landing on the keyboard and points at something in our own
+layout instead. Working theory, not logcat-confirmed (this is a silent
+UI race, not a crash — logcat has nothing to show for it): tapping
+"Post" blurs the `TextInput`, which dismisses the keyboard as a side
+effect; the moment that starts, the sheet's own position (pinned
+relative to keyboard height) shifts back down. `onPress` only fires on
+release, by which point the button has already moved out from under the
+finger, so the tap silently misses. Changed the Post button from
+`onPress` to `onPressIn`, which fires on touch-down, before any of that
+reflow can happen. Flagged to the user as a reasoned fix, not a
+confirmed one — there was no hard evidence (no exception, no log) to
+diagnose this one the way the crash-class bugs elsewhere in this log
+were diagnosed, only the reasoning above and the pattern from the two
+prior rounds.

@@ -1450,3 +1450,17 @@ comment `FlatList` itself changed from `flexGrow: 0` to `flexShrink: 1`
 — it's now the one element that gives up space first as the sheet
 shrinks, which is what actually keeps the composer pinned and visible
 regardless of how much of the screen the keyboard takes.
+
+**Follow-up from a second device screenshot**: pinning the sheet at
+exactly `keyboardHeight` (zero gap) still left the composer sitting
+flush against the keyboard's visible top edge, hard to read while
+typing. The Samsung Keyboard on the test device renders its own
+suggestion/tool row (emoji, AI, clipboard, handwriting icons) above the
+actual key rows — plausibly not fully reflected in the height
+`keyboardDidShow` reports, which would explain the sheet rendering
+slightly into space the keyboard's own chrome was still occupying.
+Rather than chase an exact per-keyboard/device measurement, added a
+flat `KEYBOARD_GAP` (24px) on top of the reported height, both for the
+sheet's upward offset and its `maxHeight` ceiling — simpler and more
+robust than trying to be pixel-exact against a value that isn't fully
+trustworthy across keyboards.

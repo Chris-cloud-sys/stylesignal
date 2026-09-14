@@ -36,6 +36,14 @@ import { colors, radius, space, type, weight } from '../theme';
 const WINDOW_HEIGHT = Dimensions.get('window').height;
 const SHEET_MAX_HEIGHT = WINDOW_HEIGHT * 0.75;
 const SHEET_MIN_HEIGHT = 200;
+// Real breathing room above the keyboard, not zero — some keyboards (seen
+// on-device: Samsung Keyboard's own suggestion/tool row above the actual
+// keys) render extra chrome that isn't fully reflected in the height
+// `keyboardDidShow` reports, so pinning the composer at exactly that
+// reported height still left it flush against the keyboard's visible top
+// edge with no visible gap. A fixed margin is simpler and more robust
+// than trying to measure that discrepancy precisely per-keyboard/device.
+const KEYBOARD_GAP = 24;
 
 /** Tracks the keyboard's own height directly rather than leaning on
  * `KeyboardAvoidingView`'s heuristics — those fought against `sheet`'s
@@ -248,11 +256,21 @@ export function CommentSheet({ outfitId, visible, onClose, onCountChange }: Prop
           accessibilityRole="button"
           accessibilityLabel="Close comments"
         />
-        <View style={[styles.sheetWrap, { bottom: keyboardHeight }]}>
+        <View
+          style={[
+            styles.sheetWrap,
+            { bottom: keyboardHeight > 0 ? keyboardHeight + KEYBOARD_GAP : 0 },
+          ]}
+        >
         <View
           style={[
             styles.sheet,
-            { maxHeight: Math.min(SHEET_MAX_HEIGHT, WINDOW_HEIGHT - keyboardHeight - space.xl) },
+            {
+              maxHeight: Math.min(
+                SHEET_MAX_HEIGHT,
+                WINDOW_HEIGHT - keyboardHeight - KEYBOARD_GAP - space.xl,
+              ),
+            },
           ]}
         >
           <View style={styles.handle} />

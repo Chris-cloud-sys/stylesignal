@@ -801,7 +801,7 @@ const styles = StyleSheet.create({
     gap: space.sm,
     borderWidth: 1,
     borderColor: colors.border,
-    backgroundColor: '#FAF2E1',
+    backgroundColor: colors.badgeBackground,
     borderRadius: radius.md,
     paddingHorizontal: space.md,
     paddingVertical: space.sm,

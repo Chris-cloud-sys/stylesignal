@@ -101,10 +101,10 @@ const styles = StyleSheet.create({
     height: CARD_HEIGHT,
     borderRadius: 20,
     overflow: 'hidden',
-    backgroundColor: '#1A1A1A',
+    backgroundColor: '#0D0F14', // Midnight Ink — SPEC+ rebrand, see theme.ts
   },
   photo: { ...StyleSheet.absoluteFillObject, width: undefined, height: undefined },
-  photoPlaceholder: { backgroundColor: '#3A362E' },
+  photoPlaceholder: { backgroundColor: '#181E29' },
 
   wordmarkRow: {
     position: 'absolute',
@@ -114,20 +114,20 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 6,
   },
-  wordmarkDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: '#E0A32E' },
-  wordmark: { fontSize: 13, fontWeight: '500', color: '#F4F0E9', letterSpacing: 0.3 },
+  wordmarkDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: '#38BDF8' },
+  wordmark: { fontSize: 13, fontWeight: '500', color: '#E4E4E7', letterSpacing: 0.3 },
 
   scrim: {
     position: 'absolute',
     left: 0,
     right: 0,
     bottom: 0,
-    backgroundColor: 'rgba(20,18,14,0.88)',
+    backgroundColor: 'rgba(13,15,20,0.88)',
     padding: 20,
   },
-  occasion: { fontSize: 11, color: '#C9C2B4', marginBottom: 6 },
-  verdict: { fontSize: 26, lineHeight: 31, fontWeight: '400', color: '#F4F0E9', letterSpacing: -0.3 },
-  subtitle: { fontSize: 13, lineHeight: 19, color: '#D8D2C4', marginTop: 6, marginBottom: 14 },
+  occasion: { fontSize: 11, color: '#9CA3AF', marginBottom: 6 },
+  verdict: { fontSize: 26, lineHeight: 31, fontWeight: '400', color: '#E4E4E7', letterSpacing: -0.3 },
+  subtitle: { fontSize: 13, lineHeight: 19, color: '#C7CBD6', marginTop: 6, marginBottom: 14 },
 
   swatchRow: { flexDirection: 'row', gap: 6, marginBottom: 12 },
   swatch: {
@@ -135,7 +135,7 @@ const styles = StyleSheet.create({
     height: 22,
     borderRadius: 6,
     borderWidth: 1,
-    borderColor: 'rgba(244,240,233,0.25)',
+    borderColor: 'rgba(228,228,231,0.25)',
   },
 
   meterRow: { flexDirection: 'row', gap: 8, flexWrap: 'wrap' },
@@ -147,17 +147,17 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     borderRadius: 999,
     borderWidth: 1,
-    borderColor: 'rgba(244,240,233,0.3)',
+    borderColor: 'rgba(228,228,231,0.3)',
   },
-  meterBadgeLabel: { fontSize: 11, color: '#C9C2B4' },
-  meterBadgeLevel: { fontSize: 11, fontWeight: '500', color: '#F4F0E9' },
+  meterBadgeLabel: { fontSize: 11, color: '#9CA3AF' },
+  meterBadgeLevel: { fontSize: 11, fontWeight: '500', color: '#E4E4E7' },
 
-  // §2.6: amber is the accent — the one line on this card meant to prompt
-  // action gets it, same rule as the in-app primary CTA.
+  // SPEC+ rebrand: Neon Cyan is the accent now — the one line on this card
+  // meant to prompt action gets it, same rule as the in-app primary CTA.
   cta: {
     fontSize: 12,
     fontWeight: '500',
-    color: '#E0A32E',
+    color: '#38BDF8',
     letterSpacing: 0.2,
     marginTop: 14,
   },

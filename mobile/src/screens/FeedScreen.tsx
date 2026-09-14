@@ -464,7 +464,7 @@ const styles = StyleSheet.create({
   notice: {
     ...type.meta,
     color: colors.text,
-    backgroundColor: '#FAF2E1',
+    backgroundColor: colors.badgeBackground,
     paddingHorizontal: space.lg,
     paddingVertical: space.sm,
     marginHorizontal: space.lg,

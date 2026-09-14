@@ -4,11 +4,11 @@
     "slug": "stylesignal",
     "version": "1.0.0",
     "orientation": "portrait",
-    "userInterfaceStyle": "light",
+    "userInterfaceStyle": "automatic",
     "scheme": "stylesignal",
     "splash": {
       "resizeMode": "contain",
-      "backgroundColor": "#F4F0E9"
+      "backgroundColor": "#FAFAFA"
     },
     "ios": {
       "supportsTablet": true,
@@ -21,7 +21,7 @@
     "android": {
       "package": "com.latencyx.stylesignal",
       "adaptiveIcon": {
-        "backgroundColor": "#F4F0E9"
+        "backgroundColor": "#FAFAFA"
       }
     },
     "plugins": [

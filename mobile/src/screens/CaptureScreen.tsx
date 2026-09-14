@@ -351,7 +351,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignSelf: 'flex-start',
     alignItems: 'baseline',
-    backgroundColor: '#FAF2E1',
+    backgroundColor: colors.badgeBackground,
     borderRadius: radius.pill,
     paddingHorizontal: space.md,
     paddingVertical: space.xs,

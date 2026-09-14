@@ -1276,3 +1276,63 @@ was simply unreachable. Followers/following stayed on Profile
 own profile, since you can't follow yourself — the actual fix was
 presenting the stat cleanly in its own card instead of a cramped
 text-button, not removing it.
+
+---
+
+## 36. Rebrand — Electric Sky / Neon Cyan, and real light/dark mode
+
+A full rebrand away from Ink/Bone/Amber, given as a complete light+dark
+colour matrix. Three pieces, each a different size, scoped and confirmed
+separately before building:
+
+**The accent swap** (amber → Electric Sky `#00A3E0` light / Neon Cyan
+`#38BDF8` dark) was the trivial part — every screen already reads
+`colors.accent`, never a hardcoded hex, so changing `theme.ts` alone
+propagated everywhere. The one place that needed its own edit was
+`ShareCard.tsx`, which — being a fixed always-dark shareable image, not
+something that should shift with the viewer's device theme — hardcodes
+its own literal hex values rather than importing `colors`. Updated by
+hand to the dark-palette values.
+
+**Real light/dark mode didn't exist before this** — `colors` was a
+single static object. Rather than the large refactor true live-switching
+would need (moving every screen's `StyleSheet.create(...)` — currently
+called once at module scope — into a hook so it can react to a theme
+change while the app is open), the mode is resolved ONCE at launch via
+`Appearance.getColorScheme()`. Every screen keeps reading plain
+`colors.X` exactly as before; nothing else had to change. The real
+trade-off, stated plainly: flipping the OS theme while StyleSignal is
+already open does nothing until the app is relaunched. Two native-level
+things would have silently broken this if left alone: `app.json` had
+`"userInterfaceStyle": "light"`, which pins `Appearance.getColorScheme()`
+to always report light *inside this app* regardless of the phone's real
+setting (changed to `"automatic"`); and `App.tsx`'s `<StatusBar
+style="dark">` was hardcoded, which would have rendered dark status-bar
+icons on top of a dark background in dark mode — invisible. Both fixed.
+Splash screen and Android adaptive-icon background colours updated to
+match (`#FAFAFA`) — cosmetic, but a stale Bone-coloured splash flashing
+in front of the new palette would have undercut the whole rebrand.
+
+**The Coral/Neon-Coral "signal" colour was scoped down before being
+built**, not after: the brief's own wording — "Signal / Trend Active"
+flags — described colour-coding outfit *content*, which is exactly what
+§2.6's original "colour never delivers the verdict" rule exists to
+forbid, and which this whole product's differentiation (see the earlier
+competitor-strengths review this session) leans on. Confirmed directly:
+the token is defined (`colors.signal`), because defining it costs
+nothing and was part of the brief, but it is deliberately unused
+anywhere in the app right now — reserved for a future non-judgment UI
+surface (a "new" badge, a system notice) if one is ever deliberately
+designed to need it, not applied to any outfit-reading screen. `colors.
+systemError` (genuine failures, e.g. a failed upload) stays the only
+coral-family tone actually in use, and stays conceptually separate from
+`signal` even though the current dark/light hex values happen to match.
+
+Also folded in while touching every screen's icon-badge background: four
+files (`primitives.tsx`, `CaptureScreen.tsx`, `FeedScreen.tsx`,
+`ResultScreen.tsx`) each hardcoded the same soft-amber badge tint as a
+literal hex rather than a theme token, which would have left a visibly
+stale warm-amber badge fill sitting on top of the new cool-toned palette
+in every one of those spots. Centralised as `colors.badgeBackground`
+(light: pale sky tint; dark: a muted deep-cyan-tinted surface, distinct
+from the plain dark `surface` token so badges still read as badges).

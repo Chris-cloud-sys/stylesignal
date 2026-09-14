@@ -30,7 +30,7 @@ import { SignInScreen } from './src/screens/SignInScreen';
 import { UpgradeScreen } from './src/screens/UpgradeScreen';
 import { UserProfileScreen } from './src/screens/UserProfileScreen';
 import { WardrobeScreen } from './src/screens/WardrobeScreen';
-import { colors } from './src/theme';
+import { colors, isDarkMode } from './src/theme';
 
 type Screen =
   | { name: 'loading' }
@@ -97,7 +97,7 @@ export default function App(): React.ReactElement {
 
   return (
     <SafeAreaProvider>
-      <StatusBar style="dark" backgroundColor={colors.background} />
+      <StatusBar style={isDarkMode ? 'light' : 'dark'} backgroundColor={colors.background} />
       <SafeAreaView style={styles.root} edges={['top', 'left', 'right']}>
         <View style={styles.content}>
           {screen.name === 'loading' ? (

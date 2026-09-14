@@ -1,39 +1,91 @@
 /**
- * Design tokens — spec §2.6.
+ * Design tokens — spec §2.6 (superseded in part, see below).
  *
- * The outfit photo is the hero, so the UI recedes. Ink + Bone carry ~90% of
- * every screen; Signal Amber is a signature, not a fill.
+ * The outfit photo is the hero, so the UI recedes. Ink/Bone/Amber has been
+ * replaced with a light/dark-aware Electric Sky / Neon Cyan system —
+ * SPEC+, a deliberate rebrand, see docs/spec-deviations.md.
  *
- * Two rules here are product rules, not taste:
- *   1. Colour never delivers the verdict. Feedback is language (§7). There is
- *      deliberately no `success` / `warning` / `error` colour for feedback
- *      content — only for system state like a failed upload.
- *   2. Amber, not red. Red reads as judgement, which contradicts the
- *      descriptive, non-evaluative voice.
+ * What changed from the original §2.6 and what didn't:
+ *   1. STILL TRUE, on purpose: "colour never delivers the verdict" still
+ *      holds for outfit content. `colors.signal` (Coral/Neon Coral) is
+ *      defined — it was part of the rebrand brief — but deliberately NOT
+ *      applied anywhere on a read, a quick-read, or any other outfit-
+ *      judgment surface. It's reserved for clearly non-judgment UI (a
+ *      "new" badge, a system notice) if a specific feature ever wants it.
+ *      Defining the token cost nothing; using it on content would have
+ *      reopened the exact rule this file exists to enforce.
+ *   2. STILL TRUE: `colors.systemError` stays reserved for genuine system
+ *      failures (a failed upload), not for grading an outfit — it shares
+ *      a hue family with `signal` but is a separate token for a separate,
+ *      narrower purpose.
+ *   3. STILL TRUE: white-label — a tenant's `primary_color` replaces
+ *      `accent` and nothing else.
  *
- * White-label (§2.6): a tenant's `primary_color` replaces `accent` and nothing
- * else. Ink/Bone/Slate stay constant — that neutrality is what makes the base
- * themeable at all.
+ * Light/dark resolution happens ONCE, at module load (`Appearance.
+ * getColorScheme()`), not live — every screen already reads plain
+ * `colors.X` values baked into a module-scope `StyleSheet.create(...)`,
+ * not a hook, so there is nothing to re-render if the OS theme changes
+ * while the app is already open. A relaunch picks up the new OS setting.
+ * Wiring true live-switching would mean moving every screen's stylesheet
+ * into a hook — a much larger refactor, deliberately out of scope here.
  */
+import { Appearance } from 'react-native';
 
-export const palette = {
-  ink: '#1A1A1A',
-  bone: '#F4F0E9',
-  accent: '#E0A32E', // Signal Amber — the lead accent
-  indigo: '#2C4A7C', // the §2.6 fork; pick one accent, never run both
-  slate: '#8A8578',
+const lightPalette = {
+  background: '#FAFAFA', // Crisp Chalk White
+  surface: '#F1F3F5', // Soft Editorial Gray
+  text: '#1A1A1A', // Onyx Ink
+  textMuted: '#5B6570',
+  border: '#E2E5E9',
+  accent: '#00A3E0', // Electric Sky
+  onAccent: '#FFFFFF',
+  systemError: '#FF5A5F', // Coral Alert
+  signal: '#FF5A5F', // same hue as systemError, different purpose — see header
+  badgeBackground: '#E3F4FC', // soft accent-tinted icon-badge fill
 } as const;
 
+const darkPalette = {
+  background: '#0D0F14', // Midnight Ink — never pure black, or the UI flattens
+  surface: '#181E29', // Deep Slate
+  text: '#E4E4E7', // Soft Frost
+  textMuted: '#9CA3AF',
+  border: '#262D3A',
+  accent: '#38BDF8', // Neon Cyan — already toned down from a fully saturated
+  // sky blue, so it doesn't vibrate against Midnight Ink.
+  onAccent: '#0D0F14',
+  systemError: '#FF6B6B', // Neon Coral
+  signal: '#FF6B6B',
+  badgeBackground: '#152736',
+} as const;
+
+const scheme = Appearance.getColorScheme();
+const active = scheme === 'dark' ? darkPalette : lightPalette;
+
+/** Resolved once at launch, same as `colors` — see the module header for
+ * why this isn't live. Lets App.tsx pick a status-bar icon style that's
+ * actually visible against the resolved background. */
+export const isDarkMode = scheme === 'dark';
+
 export const colors = {
-  background: palette.bone,
-  surface: '#FBF9F5',
-  text: palette.ink,
-  textMuted: palette.slate,
-  border: '#E2DCD0',
-  accent: palette.accent,
-  onAccent: palette.ink,
+  background: active.background,
+  surface: active.surface,
+  text: active.text,
+  textMuted: active.textMuted,
+  border: active.border,
+  accent: active.accent,
+  onAccent: active.onAccent,
   /** System state only — never used to grade an outfit. */
-  systemError: '#8C3A2B',
+  systemError: active.systemError,
+  /** SPEC+ — reserved, not yet used anywhere. Not for outfit content —
+   * see the module header. Only for a future non-judgment UI surface (a
+   * "new" badge, a system notice), if one is ever deliberately designed
+   * to need it. */
+  signal: active.signal,
+  /** Soft accent-tinted fill for icon badges (quick-read icons, capture
+   * mode icon, the "one idea" box) — was a hardcoded amber tint in each
+   * of those files; centralised here so it follows the accent and the
+   * light/dark mode instead of drifting out of sync with it. */
+  badgeBackground: active.badgeBackground,
 } as const;
 
 export const space = {

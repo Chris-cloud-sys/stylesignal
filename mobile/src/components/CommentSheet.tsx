@@ -168,11 +168,17 @@ export function CommentSheet({ outfitId, visible, onClose, onCountChange }: Prop
   };
 
   const send = async (): Promise<void> => {
+    console.log('[CommentSheet] send() called, draft=', JSON.stringify(draft), 'sending=', sending);
     const body = draft.trim();
-    if (!body || sending) return;
+    if (!body || sending) {
+      console.log('[CommentSheet] send() early-returned — empty body or already sending');
+      return;
+    }
     setSending(true);
     try {
+      console.log('[CommentSheet] calling postComment...');
       const comment = await postComment(outfitId, body, replyTarget?.comment_id);
+      console.log('[CommentSheet] postComment SUCCEEDED', comment.comment_id);
       if (replyTarget) {
         setReplies((existing) => ({
           ...existing,
@@ -192,7 +198,8 @@ export function CommentSheet({ outfitId, visible, onClose, onCountChange }: Prop
       onCountChange(1);
       setDraft('');
       setReplyTarget(null);
-    } catch {
+    } catch (err) {
+      console.log('[CommentSheet] postComment FAILED', err);
       setError('Could not post that comment. Try again.');
     } finally {
       setSending(false);
@@ -256,7 +263,10 @@ export function CommentSheet({ outfitId, visible, onClose, onCountChange }: Prop
       <View style={styles.overlay}>
         <Pressable
           style={styles.backdrop}
-          onPress={onClose}
+          onPress={() => {
+            console.log('[CommentSheet] backdrop onPress fired (closing)');
+            onClose();
+          }}
           accessibilityRole="button"
           accessibilityLabel="Close comments"
         />
@@ -339,7 +349,10 @@ export function CommentSheet({ outfitId, visible, onClose, onCountChange }: Prop
               // already moved out from under the finger, so the tap
               // silently misses. onPressIn fires on touch-down, before any
               // of that reflow can happen.
-              onPressIn={() => void send()}
+              onPressIn={() => {
+                console.log('[CommentSheet] Post onPressIn fired');
+                void send();
+              }}
               disabled={!draft.trim() || sending}
               accessibilityRole="button"
               accessibilityLabel="Post comment"

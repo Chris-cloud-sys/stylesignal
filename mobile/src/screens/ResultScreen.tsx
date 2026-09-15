@@ -242,7 +242,7 @@ function Complete({
   };
 
   return (
-    <ScrollView contentContainerStyle={styles.container}>
+    <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
       {/* A second way back besides the bottom "Scan another outfit" CTA —
           not everyone wants to scroll the whole read to leave. */}
       <View style={styles.topBar}>

@@ -64,6 +64,7 @@ export function BrowseFeed({ items, initialIndex, onBack, onOpenProfile }: Props
         data={items}
         keyExtractor={(item) => item.outfit_id}
         contentContainerStyle={styles.list}
+        keyboardShouldPersistTaps="handled"
         initialScrollIndex={initialIndex > 0 ? initialIndex : undefined}
         onScrollToIndexFailed={({ index }) => {
           // The card's own height varies with rail/verdict-text length, so

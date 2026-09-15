@@ -1747,3 +1747,38 @@ carries its own `paddingHorizontal`; a profile's grid renders it inside
 already-padded content container — passed `style={{paddingHorizontal:
 0}}` there rather than stacking two paddings and ending up visibly more
 indented than the other two screens.
+
+## 43. Comment-sheet fix confirmed, then a real second bug found underneath it
+
+The `insets.bottom` fix (entry #42) was confirmed correct on-device with
+the diagnostic logging still in place: `postComment SUCCEEDED` logged
+twice, for two separate real posts. First time this bug got a clean,
+logged, positive confirmation rather than "reasoned, unconfirmed."
+
+Chris then reported a second, distinct symptom on the very next test:
+posting now worked, but took two taps — the first tap only dismissed
+the keyboard, the second one actually posted. Diagnostic logging showed
+tap 1 produced no `onPressIn` log at all (same signature as the
+already-fixed bug, but this is a different, known cause): Android/React
+Native's well-documented behavior where a `Touchable`/`Pressable`
+outside a focused `TextInput`, when that input sits under a scrollable
+ancestor (`ScrollView`/`FlatList`) without `keyboardShouldPersistTaps`
+set, has its first tap consumed entirely by the scroll responder's
+keyboard-dismiss handling — the touch never reaches the pressed
+element's `onPressIn` at all, only a second tap (now that the keyboard
+is already closed) does. Confirmed via the standard React Native/Android
+reports of this exact "two taps needed" symptom before applying the fix,
+rather than reasoning from scratch a sixth time.
+
+`CommentSheet.tsx`'s own composer isn't inside its own internal comment-
+list `FlatList` — they're siblings — but `CommentSheet` itself is always
+rendered *inside* a screen-level scrollable ancestor (`ResultScreen`'s
+outer `ScrollView`, `FeedScreen`'s and the new `BrowseFeed`'s outer
+`FlatList`), which is the one actually capturing the tap. Fix:
+`keyboardShouldPersistTaps="handled"` added to all of them — `Result
+Screen`'s `ScrollView`, `FeedScreen`'s `FlatList`, `BrowseFeed`'s
+`FlatList`, and `CommentSheet`'s own internal comment-list `FlatList`
+for good measure (comment-liking/reply taps while the keyboard is open
+were exposed to the same class of bug even though it wasn't reported
+there yet). Diagnostic `console.log` calls from entry #42 removed now
+that the sheet has a real, on-device-confirmed success case logged.

@@ -182,17 +182,11 @@ export function CommentSheet({ outfitId, visible, onClose, onCountChange }: Prop
   };
 
   const send = async (): Promise<void> => {
-    console.log('[CommentSheet] send() called, draft=', JSON.stringify(draft), 'sending=', sending);
     const body = draft.trim();
-    if (!body || sending) {
-      console.log('[CommentSheet] send() early-returned — empty body or already sending');
-      return;
-    }
+    if (!body || sending) return;
     setSending(true);
     try {
-      console.log('[CommentSheet] calling postComment...');
       const comment = await postComment(outfitId, body, replyTarget?.comment_id);
-      console.log('[CommentSheet] postComment SUCCEEDED', comment.comment_id);
       if (replyTarget) {
         setReplies((existing) => ({
           ...existing,
@@ -212,8 +206,7 @@ export function CommentSheet({ outfitId, visible, onClose, onCountChange }: Prop
       onCountChange(1);
       setDraft('');
       setReplyTarget(null);
-    } catch (err) {
-      console.log('[CommentSheet] postComment FAILED', err);
+    } catch {
       setError('Could not post that comment. Try again.');
     } finally {
       setSending(false);
@@ -277,10 +270,7 @@ export function CommentSheet({ outfitId, visible, onClose, onCountChange }: Prop
       <View style={styles.overlay}>
         <Pressable
           style={styles.backdrop}
-          onPress={() => {
-            console.log('[CommentSheet] backdrop onPress fired (closing)');
-            onClose();
-          }}
+          onPress={onClose}
           accessibilityRole="button"
           accessibilityLabel="Close comments"
         />
@@ -323,6 +313,7 @@ export function CommentSheet({ outfitId, visible, onClose, onCountChange }: Prop
               data={items}
               keyExtractor={(item) => item.comment_id}
               style={styles.list}
+              keyboardShouldPersistTaps="handled"
               ListEmptyComponent={
                 <Text style={styles.empty}>No comments yet — be the first to say something.</Text>
               }
@@ -368,10 +359,7 @@ export function CommentSheet({ outfitId, visible, onClose, onCountChange }: Prop
               // already moved out from under the finger, so the tap
               // silently misses. onPressIn fires on touch-down, before any
               // of that reflow can happen.
-              onPressIn={() => {
-                console.log('[CommentSheet] Post onPressIn fired');
-                void send();
-              }}
+              onPressIn={() => void send()}
               disabled={!draft.trim() || sending}
               accessibilityRole="button"
               accessibilityLabel="Post comment"

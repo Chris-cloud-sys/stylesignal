@@ -178,6 +178,7 @@ export function FeedScreen({ onRated, onOpenProfile }: Props): React.ReactElemen
           data={items}
           keyExtractor={(item) => item.outfit_id}
           contentContainerStyle={styles.list}
+          keyboardShouldPersistTaps="handled"
           ListEmptyComponent={
             <Text style={styles.empty}>
               {mode === 'rate'

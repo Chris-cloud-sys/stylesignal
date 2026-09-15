@@ -145,6 +145,16 @@ class User(Base):
     # thumb_key/original_key.
     avatar_key: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
+    # SPEC+ — referral bump (docs/spec-deviations.md). Every user gets a
+    # code at registration (own row, own code — never derived from email/
+    # name, so it's shareable without leaking either). referred_by_id is
+    # set once, at registration, from whoever's code was entered; never
+    # changes after.
+    referral_code: Mapped[str] = mapped_column(String(10), nullable=False, unique=True)
+    referred_by_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        Uuid, ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+
     tenant: Mapped[Optional[Tenant]] = relationship(back_populates="users")
     outfits: Mapped[List["Outfit"]] = relationship(
         back_populates="user", cascade="all, delete-orphan"

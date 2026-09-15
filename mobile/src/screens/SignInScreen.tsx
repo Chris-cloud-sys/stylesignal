@@ -25,6 +25,7 @@ export function SignInScreen({ onSignedIn, onForgotPassword }: Props): React.Rea
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [displayName, setDisplayName] = useState('');
+  const [referralCode, setReferralCode] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -35,7 +36,7 @@ export function SignInScreen({ onSignedIn, onForgotPassword }: Props): React.Rea
     setBusy(true);
     try {
       if (creating) {
-        await register(email.trim(), password, displayName.trim());
+        await register(email.trim(), password, displayName.trim(), referralCode.trim());
       } else {
         await login(email.trim(), password);
       }
@@ -72,6 +73,18 @@ export function SignInScreen({ onSignedIn, onForgotPassword }: Props): React.Rea
             onChangeText={setDisplayName}
             autoCapitalize="words"
             autoComplete="name"
+          />
+        ) : null}
+
+        {creating ? (
+          <TextInput
+            style={styles.input}
+            placeholder="Referral code (optional)"
+            placeholderTextColor={colors.textMuted}
+            value={referralCode}
+            onChangeText={setReferralCode}
+            autoCapitalize="characters"
+            autoCorrect={false}
           />
         ) : null}
 

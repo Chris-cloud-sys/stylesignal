@@ -25,6 +25,7 @@ from ..models import (
     Follow,
     Like,
     Outfit,
+    OutfitFeedback,
     Rating,
     User,
 )
@@ -62,21 +63,36 @@ def _require_community_enabled() -> None:
 @router.get(
     "/v1/feed",
     response_model=FeedResponse,
-    summary="Outfits eligible for rating (§6.5)",
+    summary="Outfits eligible for rating, or the whole public feed (§6.5, SPEC+)",
 )
 def get_feed(
+    mode: str = Query(default="rate", pattern="^(rate|browse)$"),
     limit: int = Query(default=20, ge=1, le=50),
     cursor: Optional[str] = Query(default=None),
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> FeedResponse:
+    """SPEC+ — ``mode`` (docs/spec-deviations.md). The original §6.5 feed
+    (``mode="rate"``, the default) is a disappearing queue by design: rating
+    an outfit — any single dimension — excludes it from ever reappearing,
+    since re-showing it would let the earn-by-rating loop be farmed. That
+    same exclusion means it was never actually browsable: nothing you'd
+    already engaged with could be scrolled back to. ``mode="browse"`` is a
+    second read of the same table with that exclusion (and the
+    rating-scarcity ordering that exists to serve the rating queue) lifted —
+    newest-first, nothing removed once acted on. Both modes share every
+    other visibility rule and every count subquery below; only the WHERE
+    exclusion and the ORDER BY differ.
+    """
     _require_community_enabled()
+    browsing = mode == "browse"
 
     # §4.8 asks for active-learning selection: prioritise the outfits the
     # preference model is least confident about. The preference model does not
     # exist until v2, so v1 uses its structural stand-in — fewest ratings
     # first, which is where any model would be least confident. Swap the
-    # ordering key for model uncertainty when §9 step 5 lands.
+    # ordering key for model uncertainty when §9 step 5 lands. Only governs
+    # mode="rate" — mode="browse" is newest-first (see docstring above).
     already_rated = select(Rating.outfit_id).where(Rating.rater_id == user.id)
     rating_count = func.count(Rating.id)
     # Correlated scalar subqueries rather than a second outerjoin — joining
@@ -109,6 +125,18 @@ def get_feed(
         .where(Follow.follower_id == user.id, Follow.followee_id == Outfit.user_id)
         .scalar_subquery()
     )
+    # mode="rate" never surfaces a rated outfit at all (excluded below), so
+    # this is always 0 there; mode="browse" needs it to tell the client
+    # whether to still show the rating widget on this card. Rating is also
+    # the outer statement's own outerjoin target (for rating_count above),
+    # so without an explicit correlate() SQLAlchemy's auto-correlation
+    # strips this subquery's own Rating FROM clause, leaving it with none.
+    rated_by_me_subq = (
+        select(func.count(Rating.id))
+        .where(Rating.outfit_id == Outfit.id, Rating.rater_id == user.id)
+        .correlate(Outfit)
+        .scalar_subquery()
+    )
 
     statement = (
         select(
@@ -119,25 +147,32 @@ def get_feed(
             favorited_by_me_subq.label("favorited_by_me"),
             comment_count_subq.label("comment_count"),
             following_owner_subq.label("following_owner"),
+            rated_by_me_subq.label("rated_by_me"),
             User.display_name.label("owner_display_name"),
             User.email.label("owner_email"),
             User.avatar_key.label("owner_avatar_key"),
+            OutfitFeedback.verdict_phrase.label("verdict_phrase"),
         )
         .outerjoin(Rating, Rating.outfit_id == Outfit.id)
-        # Owner is 1:1 with Outfit — unlike Rating/Like above, this join
-        # cannot fan out rows before the GROUP BY.
+        # Owner and feedback are each 1:1 with Outfit — unlike Rating/Like
+        # above, neither join can fan out rows before the GROUP BY.
         .join(User, User.id == Outfit.user_id)
+        .outerjoin(OutfitFeedback, OutfitFeedback.outfit_id == Outfit.id)
         .where(
             Outfit.is_public.is_(True),
             Outfit.status == "complete",
             Outfit.deleted_at.is_(None),
             Outfit.user_id != user.id,
-            Outfit.id.not_in(already_rated),
         )
-        .group_by(Outfit.id, User.id)
-        .order_by(rating_count.asc(), Outfit.created_at.desc())
+        .group_by(Outfit.id, User.id, OutfitFeedback.id)
         .limit(limit)
     )
+    if browsing:
+        statement = statement.order_by(Outfit.created_at.desc())
+    else:
+        statement = statement.where(Outfit.id.not_in(already_rated)).order_by(
+            rating_count.asc(), Outfit.created_at.desc()
+        )
     if cursor:
         statement = statement.offset(_decode_offset(cursor))
 
@@ -155,13 +190,16 @@ def get_feed(
             favorited_by_me=bool(favorited_by_me),
             comment_count=comment_count,
             following_owner=bool(following_owner),
+            rated_by_me=bool(rated_by_me),
+            verdict_phrase=verdict_phrase or None,
             owner_id=outfit.user_id,
             owner_display_name=(owner_display_name or "").strip() or owner_email.split("@")[0],
             owner_avatar_url=storage.signed_url(owner_avatar_key) if owner_avatar_key else None,
         )
         for (
             outfit, _rating_count, like_count, liked_by_me, favorited_by_me,
-            comment_count, following_owner, owner_display_name, owner_email, owner_avatar_key,
+            comment_count, following_owner, rated_by_me,
+            owner_display_name, owner_email, owner_avatar_key, verdict_phrase,
         ) in rows
     ]
 

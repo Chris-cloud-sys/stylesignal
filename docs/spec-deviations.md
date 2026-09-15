@@ -1546,3 +1546,97 @@ TODO at the top of the repo root's `README.md` (previously nonexistent —
 created for this) so the plain-search version gets swapped for a real
 `searchItems`-backed one the moment `armygymnast0f-20` clears
 eligibility; the exact re-test command is there too.
+
+## 41. Growth features: share-card formats, peak-share nudge, referral bump, browsable feed
+
+Four features requested and implemented together, each independently
+scoped:
+
+**Shop similar gets the accent colour.** `ResultScreen`'s "Shop similar"
+row was plain `text`/`textMuted` — under-sold that it was tappable.
+Switched the label and the open-in icon to `colors.accent` (Electric
+Sky/Neon Cyan), matching every other actionable link in the app (Follow
+button, "Back" links). Deliberately not `colors.signal` (Coral) — that
+stays reserved for content colour-coding under §2.6 and this isn't
+content.
+
+**Share card: Story (9:16) and Square (1:1), not one fixed ~4:5 card.**
+`ShareCard.tsx` already had real content (verdict, both meters, palette,
+wordmark, CTA) — it was never a screenshot — but only one frame size,
+which doesn't match either actual share target. Added a `format` prop
+(`'story' | 'square'`) that only changes the card's height (width fixed
+at 360, story = 360×640, square = 360×360); everything else about the
+card is unchanged, since the content and layout were already right. Two
+offscreen copies of `ShareCard` now mount simultaneously — a genuine
+second render each, view-shot capture works per-node, not shared across
+size changes on one node — and tapping the rail's Share icon now opens
+an `Alert.alert` picker ("Story (9:16)" / "Square (1:1)") before
+capturing whichever one was chosen.
+
+**Share nudge at the emotional peak.** A soft, dismissible-by-ignoring
+banner ("This one's a good one to save. Share") appears right under the
+verdict headline — not at the bottom near the generic Share icon — the
+moment both `occasion_match` and `signal_clarity` read `"strong"`. Zero
+new backend work: both meters are already computed deterministically in
+`app/worker/rules.py` for §7.7; this just reads them. Opens the same
+Story/Square picker as the rail's Share action.
+
+**Referral bump — "invite a friend, get 2 bonus scans."** New columns on
+`User`: `referral_code` (unique, 8 chars from a 0/O/1/I-free alphabet,
+minted once at registration via `security.generate_referral_code()`) and
+`referred_by_id` (nullable FK to `users.id`, set once at registration,
+never changes after). `RegisterRequest.referral_code` is optional and
+silently ignored if it doesn't match anyone — registration must never
+fail over a typo'd invite. A match credits both the referrer and the new
+account `settings.referral_bonus_scans` (2) `earned_scans` — directly in
+the `User(...)` constructor for the brand-new row, not via `+=` after,
+because a freshly-constructed, not-yet-flushed SQLAlchemy object doesn't
+have its column default applied yet (`earned_scans` reads back as
+Python `None`, not `0`, until the first flush — `+= ` on that raises
+`TypeError`; caught by the new tests, not guessed). Mobile: an optional
+"Referral code" field on the create-account form, and a new "Invite a
+friend" card on Profile showing the caller's own code plus a native
+Share sheet. No Alembic in this project (see `app/db.py`) — production
+gets the columns via `backend/scripts/migrate_referral_columns.py`, a
+new one-off script (same direct-ALTER-TABLE pattern as entry #29) that
+also backfills a unique code for every existing row before adding the
+NOT NULL + UNIQUE constraint, since existing accounts have none yet.
+
+**Genuinely browsable community feed.** Diagnosed before building
+anything: `GET /v1/feed`'s existing behaviour (§6.5) excludes any outfit
+the caller has rated, permanently — necessary so the earn-by-rating loop
+can't be farmed by re-showing something already rated, but it also means
+nothing you'd engaged with could ever be scrolled back to. That's a
+disappearing queue, not a feed, confirmed by reading `get_feed`'s own
+prior docstring rather than assuming. Fix: a `mode` query param
+(`"rate"` default | `"browse"`) on the *same* endpoint and the *same*
+query, not a new one — `mode="browse"` lifts the rated-outfit exclusion
+and swaps the ordering from rating-scarcity-first to newest-first;
+every other visibility rule (public, complete, not deleted, not your
+own) and every count subquery (likes, favorites, comments, following)
+is shared between both modes unchanged. Two additions to `FeedItem`:
+`verdict_phrase` (the read's own headline — outer-joined from
+`OutfitFeedback`, so a browsed card has something to actually read, not
+just a photo and a rating form) and `rated_by_me` (always `False` under
+`mode="rate"` since those are excluded outright; meaningful only under
+`mode="browse"`, where the client uses it to hide the rating widget on a
+card without hiding the card itself). Mobile: a Rate/Browse segmented
+control at the top of the Community screen (same visual pattern as
+Profile's Light/Dark/System selector) replaces the single feed; switching
+modes reloads from scratch. `FeedCard` now shows `verdict_phrase` under
+the image, and hides the 1–5 rating widget (replaced with "You've
+already rated this one") whenever `item.rated_by_me` or a local
+`justRated` flag (set immediately after a Browse-mode submit, before the
+next fetch would reflect it) is true — Rate mode still removes the card
+outright on submit, exactly as before; Browse mode never removes a card.
+
+One real bug caught by the tests written alongside this, not by
+inspection: the new `rated_by_me` scalar subquery also selects from
+`Rating`, which is already an outer-statement `outerjoin` target (for
+`rating_count`) — without an explicit `.correlate(Outfit)`, SQLAlchemy's
+auto-correlation logic stripped the subquery's own `Rating` FROM clause
+entirely (reasoning "the outer query already has a Rating in scope"),
+raising `InvalidRequestError: ... returned no FROM clauses`. Six
+existing feed tests failed immediately, which is what surfaced it — the
+fix is `.correlate(Outfit)` on that one subquery, forcing SQLAlchemy to
+correlate only the table that's actually meant to vary per outer row.

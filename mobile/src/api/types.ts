@@ -205,6 +205,9 @@ export interface Me {
      * choice — replaces what used to be a per-scan toggle. */
     default_share_public: boolean;
     avatar_url?: string | null;
+    /** SPEC+ — referral bump (docs/spec-deviations.md). Every account has
+     * one; share it to earn bonus scans when someone registers with it. */
+    referral_code: string;
   };
   quota: Quota;
 }
@@ -233,6 +236,12 @@ export interface FeedItem {
   owner_display_name: string;
   owner_avatar_url?: string | null;
   following_owner: boolean;
+  /** SPEC+ — browsable feed (docs/spec-deviations.md). The read's headline,
+   * so a browsed card has something to actually read. */
+  verdict_phrase?: string | null;
+  /** True only in mode="browse" — mode="rate" never surfaces a rated
+   * outfit. Hides the rating widget without hiding the card. */
+  rated_by_me: boolean;
 }
 
 export interface Comment {

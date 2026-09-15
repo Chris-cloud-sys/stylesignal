@@ -3,12 +3,14 @@
 Short-lived access token plus a refresh token, both JWT bearer.
 """
 from datetime import datetime, timedelta, timezone
+from typing import Optional
 
 from fastapi import APIRouter, Depends, File, UploadFile, status
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from .. import ratelimit
+from ..config import get_settings
 from ..db import get_db
 from ..deps import get_current_user
 from ..email import get_email_sender
@@ -30,6 +32,7 @@ from ..schemas import (
 from ..security import (
     create_token_pair,
     decode_token,
+    generate_referral_code,
     generate_reset_code,
     hash_password,
     hash_reset_code,
@@ -41,10 +44,18 @@ from ..worker.preprocess import UndecodableImage, _encode_jpeg, _fit, _open_and_
 
 router = APIRouter(prefix="/v1/auth", tags=["auth"])
 
+settings = get_settings()
+
 AVATAR_ALLOWED_TYPES = {"image/jpeg", "image/jpg", "image/png", "image/heic", "image/heif", "image/webp"}
 AVATAR_MAX_UPLOAD_BYTES = 8 * 1024 * 1024
 AVATAR_LONGEST_EDGE = 512
 AVATAR_JPEG_QUALITY = 85
+
+# SPEC+ — referral bump (docs/spec-deviations.md). A handful of retries on a
+# generated code colliding with an existing one — astronomically unlikely at
+# ~40 bits of entropy, but a DB-level unique constraint means a retry loop
+# costs nothing to have and removes the failure mode entirely.
+REFERRAL_CODE_GENERATION_ATTEMPTS = 5
 
 
 def _user_out(user: User) -> UserOut:
@@ -58,6 +69,24 @@ def _user_out(user: User) -> UserOut:
         created_at=user.created_at,
         default_share_public=user.default_share_public,
         avatar_url=avatar_url,
+        referral_code=user.referral_code,
+    )
+
+
+def _unique_referral_code(db: Session) -> str:
+    for _ in range(REFERRAL_CODE_GENERATION_ATTEMPTS):
+        code = generate_referral_code()
+        exists = db.execute(
+            select(User.id).where(User.referral_code == code)
+        ).scalar_one_or_none()
+        if exists is None:
+            return code
+    # Should be unreachable at this alphabet/length; fail loudly rather than
+    # silently hand out a colliding code the unique constraint would reject.
+    raise APIError(
+        status.HTTP_500_INTERNAL_SERVER_ERROR,
+        "referral_code_generation_failed",
+        "Could not generate a unique referral code. Try registering again.",
     )
 
 PASSWORD_RESET_CODE_TTL_MINUTES = 15
@@ -79,14 +108,31 @@ def register(payload: RegisterRequest, db: Session = Depends(get_db)) -> TokenPa
             "An account with that email already exists.",
         )
 
+    referrer: Optional[User] = None
+    if payload.referral_code:
+        referrer = db.execute(
+            select(User).where(User.referral_code == payload.referral_code.strip().upper())
+        ).scalar_one_or_none()
+
+    # Credited once, here, at registration — not per-scan, so it can't be
+    # farmed by repeated activity. Both sides get the same bump. Set
+    # directly in the constructor, not via += after — a freshly-constructed,
+    # not-yet-flushed object doesn't have its column default applied yet,
+    # so earned_scans is still None in Python at this point, not 0.
+    bonus = settings.referral_bonus_scans if referrer is not None else 0
     user = User(
         email=email,
         display_name=payload.display_name.strip() or email.split("@")[0],
         password_hash=hash_password(payload.password),
         plan="free",
         scans_period=current_period(),
+        referral_code=_unique_referral_code(db),
+        referred_by_id=referrer.id if referrer else None,
+        earned_scans=bonus,
     )
     db.add(user)
+    if referrer is not None:
+        referrer.earned_scans += settings.referral_bonus_scans
     db.commit()
     db.refresh(user)
 

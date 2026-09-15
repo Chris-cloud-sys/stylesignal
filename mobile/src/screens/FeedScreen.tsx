@@ -82,7 +82,17 @@ const DIMENSIONS: Array<{
   },
 ];
 
+type FeedMode = 'rate' | 'browse';
+
 export function FeedScreen({ onRated, onOpenProfile }: Props): React.ReactElement {
+  // SPEC+ — browsable feed (docs/spec-deviations.md #41). "Rate" is the
+  // original §6.5 loop, a disappearing queue by design (rating an outfit
+  // excludes it for good, so the earn hook can't be farmed by re-showing
+  // it). That same exclusion made it un-browsable — nothing you'd already
+  // engaged with could be scrolled back to. "Browse" is a second read of
+  // the same feed with that exclusion lifted, newest-first, nothing
+  // removed once acted on — see get_feed's own docstring in feed.py.
+  const [mode, setMode] = useState<FeedMode>('rate');
   const [items, setItems] = useState<FeedItem[]>([]);
   const [cursor, setCursor] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -90,39 +100,41 @@ export function FeedScreen({ onRated, onOpenProfile }: Props): React.ReactElemen
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
 
-  const load = useCallback(async (nextCursor?: string | null): Promise<void> => {
-    try {
-      const page = await fetchFeed(nextCursor);
-      setItems((existing) => (nextCursor ? [...existing, ...page.items] : page.items));
-      setCursor(page.cursor ?? null);
-      setError(null);
-    } catch {
-      setError('Could not load the community feed.');
-    } finally {
-      setLoading(false);
-      setLoadingMore(false);
-    }
-  }, []);
+  const load = useCallback(
+    async (activeMode: FeedMode, nextCursor?: string | null): Promise<void> => {
+      try {
+        const page = await fetchFeed(nextCursor, activeMode);
+        setItems((existing) => (nextCursor ? [...existing, ...page.items] : page.items));
+        setCursor(page.cursor ?? null);
+        setError(null);
+      } catch {
+        setError('Could not load the community feed.');
+      } finally {
+        setLoading(false);
+        setLoadingMore(false);
+      }
+    },
+    [],
+  );
 
   useEffect(() => {
-    void load();
-  }, [load]);
+    setLoading(true);
+    setItems([]);
+    setCursor(null);
+    void load(mode);
+  }, [load, mode]);
 
   const handleSubmitted = (outfitId: string, scansEarned: number): void => {
-    setItems((existing) => existing.filter((item) => item.outfit_id !== outfitId));
+    // Only the Rate queue removes a card once acted on — Browse keeps it
+    // visible (FeedCard hides its own rating widget locally once rated).
+    if (mode === 'rate') {
+      setItems((existing) => existing.filter((item) => item.outfit_id !== outfitId));
+    }
     if (scansEarned > 0) {
       setNotice(`Earned ${scansEarned} scan${scansEarned === 1 ? '' : 's'} — thanks for rating.`);
       onRated();
     }
   };
-
-  if (loading) {
-    return (
-      <View style={styles.centered}>
-        <ActivityIndicator color={colors.textMuted} />
-      </View>
-    );
-  }
 
   return (
     <View style={styles.flex}>
@@ -130,37 +142,68 @@ export function FeedScreen({ onRated, onOpenProfile }: Props): React.ReactElemen
         <Text style={styles.title}>Community</Text>
       </View>
 
+      <View style={styles.modeRow}>
+        {(
+          [
+            { value: 'rate', label: 'Rate' },
+            { value: 'browse', label: 'Browse' },
+          ] as const
+        ).map((option) => {
+          const selected = option.value === mode;
+          return (
+            <Pressable
+              key={option.value}
+              onPress={() => setMode(option.value)}
+              style={[styles.modeOption, selected && styles.modeOptionSelected]}
+              accessibilityRole="button"
+              accessibilityState={{ selected }}
+            >
+              <Text style={[styles.modeOptionLabel, selected && styles.modeOptionLabelSelected]}>
+                {option.label}
+              </Text>
+            </Pressable>
+          );
+        })}
+      </View>
+
       {error ? <Text style={styles.error}>{error}</Text> : null}
       {notice ? <Text style={styles.notice}>{notice}</Text> : null}
 
-      <FlatList
-        data={items}
-        keyExtractor={(item) => item.outfit_id}
-        contentContainerStyle={styles.list}
-        ListEmptyComponent={
-          <Text style={styles.empty}>
-            Nothing to rate right now — check back once more members have
-            shared a read.
-          </Text>
-        }
-        onEndReachedThreshold={0.4}
-        onEndReached={() => {
-          if (cursor && !loadingMore) {
-            setLoadingMore(true);
-            void load(cursor);
+      {loading ? (
+        <View style={styles.centered}>
+          <ActivityIndicator color={colors.textMuted} />
+        </View>
+      ) : (
+        <FlatList
+          data={items}
+          keyExtractor={(item) => item.outfit_id}
+          contentContainerStyle={styles.list}
+          ListEmptyComponent={
+            <Text style={styles.empty}>
+              {mode === 'rate'
+                ? 'Nothing to rate right now — check back once more members have shared a read.'
+                : 'Nothing to browse yet — check back once more members have shared a read.'}
+            </Text>
           }
-        }}
-        ListFooterComponent={
-          loadingMore ? <ActivityIndicator color={colors.textMuted} /> : null
-        }
-        renderItem={({ item }) => (
-          <FeedCard
-            item={item}
-            onSubmitted={(earned) => handleSubmitted(item.outfit_id, earned)}
-            onOpenProfile={onOpenProfile}
-          />
-        )}
-      />
+          onEndReachedThreshold={0.4}
+          onEndReached={() => {
+            if (cursor && !loadingMore) {
+              setLoadingMore(true);
+              void load(mode, cursor);
+            }
+          }}
+          ListFooterComponent={
+            loadingMore ? <ActivityIndicator color={colors.textMuted} /> : null
+          }
+          renderItem={({ item }) => (
+            <FeedCard
+              item={item}
+              onSubmitted={(earned) => handleSubmitted(item.outfit_id, earned)}
+              onOpenProfile={onOpenProfile}
+            />
+          )}
+        />
+      )}
     </View>
   );
 }
@@ -176,6 +219,12 @@ function FeedCard({
 }): React.ReactElement {
   const [values, setValues] = useState<Partial<Record<RatingDimension, number>>>({});
   const [submitting, setSubmitting] = useState(false);
+  // SPEC+ — browsable feed (docs/spec-deviations.md #41). item.rated_by_me
+  // only ever arrives true from mode="browse" (mode="rate" excludes rated
+  // outfits outright); justRated covers the same card right after a
+  // Browse-mode submit, before the next fetch would reflect it.
+  const [justRated, setJustRated] = useState(false);
+  const alreadyRated = item.rated_by_me || justRated;
   const [liked, setLiked] = useState(item.liked_by_me);
   const [likeCount, setLikeCount] = useState(item.like_count);
   const [likeBusy, setLikeBusy] = useState(false);
@@ -273,6 +322,7 @@ function FeedCard({
         const response = await rateOutfit(item.outfit_id, dimension, value);
         earned += response.scans_earned;
       }
+      setJustRated(true);
       onSubmitted(earned);
     } catch {
       // Leave the card as-is with its values intact — the user can retry.
@@ -363,6 +413,13 @@ function FeedCard({
         </View>
       </View>
 
+      {/* SPEC+ — browsable feed (docs/spec-deviations.md #41). The read's
+          own headline, so Browse mode has something to actually read, not
+          just a photo and a rating form. */}
+      {item.verdict_phrase ? (
+        <Text style={styles.cardVerdict}>{item.verdict_phrase}</Text>
+      ) : null}
+
       {item.occasion ? (
         <Text style={styles.cardOccasion}>Occasion: {sentenceCase(item.occasion)}</Text>
       ) : null}
@@ -374,25 +431,31 @@ function FeedCard({
         onCountChange={(delta) => setCommentCount((count) => Math.max(0, count + delta))}
       />
 
-      {DIMENSIONS.map((dimension) => (
-        <RatingRow
-          key={dimension.key}
-          label={dimension.label}
-          hint={dimension.hint(item.occasion)}
-          value={values[dimension.key]}
-          onChange={(value) =>
-            setValues((existing) => ({ ...existing, [dimension.key]: value }))
-          }
-        />
-      ))}
+      {alreadyRated ? (
+        <Text style={styles.cardRatedNotice}>You've already rated this one.</Text>
+      ) : (
+        <>
+          {DIMENSIONS.map((dimension) => (
+            <RatingRow
+              key={dimension.key}
+              label={dimension.label}
+              hint={dimension.hint(item.occasion)}
+              value={values[dimension.key]}
+              onChange={(value) =>
+                setValues((existing) => ({ ...existing, [dimension.key]: value }))
+              }
+            />
+          ))}
 
-      <Button
-        label="Submit rating"
-        onPress={() => void submit()}
-        disabled={!hasAnyValue}
-        busy={submitting}
-        style={styles.cardSubmit}
-      />
+          <Button
+            label="Submit rating"
+            onPress={() => void submit()}
+            disabled={!hasAnyValue}
+            busy={submitting}
+            style={styles.cardSubmit}
+          />
+        </>
+      )}
     </View>
   );
 }
@@ -453,6 +516,23 @@ const styles = StyleSheet.create({
     paddingBottom: space.md,
   },
   title: { ...type.title, color: colors.text },
+  modeRow: {
+    flexDirection: 'row',
+    gap: space.sm,
+    paddingHorizontal: space.lg,
+    paddingBottom: space.md,
+  },
+  modeOption: {
+    flex: 1,
+    alignItems: 'center',
+    paddingVertical: space.sm,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  modeOptionSelected: { borderColor: colors.accent, backgroundColor: colors.badgeBackground },
+  modeOptionLabel: { ...type.body, color: colors.textMuted },
+  modeOptionLabelSelected: { color: colors.accent, fontWeight: weight.medium },
   list: { paddingHorizontal: space.lg, paddingBottom: space.xxl },
   empty: { ...type.body, color: colors.textMuted, marginTop: space.xl },
   error: {
@@ -486,7 +566,9 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surface,
   },
   cardImagePlaceholder: { borderWidth: 1, borderColor: colors.border },
-  cardOccasion: { ...type.meta, color: colors.textMuted, marginBottom: space.md },
+  cardVerdict: { ...type.bodyMedium, color: colors.text, marginTop: space.md },
+  cardOccasion: { ...type.meta, color: colors.textMuted, marginTop: 2, marginBottom: space.md },
+  cardRatedNotice: { ...type.meta, color: colors.textMuted },
 
   // --- Vertical action rail, TikTok-style: overlaid on the image's
   // bottom-right corner rather than competing with the bottom tab bar. ---

@@ -5,7 +5,7 @@
  * the visible height. */
 import * as ImagePicker from 'expo-image-picker';
 import React, { useEffect, useState } from 'react';
-import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
+import { ActivityIndicator, Alert, Pressable, ScrollView, Share, StyleSheet, Switch, Text, View } from 'react-native';
 
 import { fetchMe, fetchUserProfile, removeAvatar, updateSharingDefault, uploadAvatar } from '../api/client';
 import type { Me } from '../api/types';
@@ -201,6 +201,25 @@ export function ProfileScreen({
 
           {me ? (
             <View style={styles.card}>
+              <SectionLabel>Invite a friend</SectionLabel>
+              <Text style={styles.meta}>
+                Share your code. You each get 2 bonus scans the moment they
+                create an account with it.
+              </Text>
+              <View style={styles.referralRow}>
+                <Text style={styles.referralCode}>{me.user.referral_code}</Text>
+              </View>
+              <Button
+                variant="secondary"
+                label="Share invite"
+                onPress={() => void shareReferralCode(me.user.referral_code)}
+                style={styles.linkButton}
+              />
+            </View>
+          ) : null}
+
+          {me ? (
+            <View style={styles.card}>
               <SectionLabel>Scans</SectionLabel>
               <Text style={styles.meta}>
                 {me.quota.scans_remaining === null
@@ -293,6 +312,17 @@ export function ProfileScreen({
   );
 }
 
+function shareReferralCode(code: string): void {
+  Share.share({
+    message:
+      `Come read your outfits on StyleSignal — no scores, just an honest ` +
+      `description of how a look comes across. Use my code ${code} when you ` +
+      `sign up and we each get 2 bonus scans.`,
+  }).catch(() => {
+    // User cancelled or the share sheet failed to open — nothing to recover.
+  });
+}
+
 function Stat({ label, value }: { label: string; value: number }): React.ReactElement {
   return (
     <View style={styles.stat}>
@@ -331,6 +361,19 @@ const styles = StyleSheet.create({
   statValue: { ...type.title, color: colors.text },
   statLabel: { ...type.meta, color: colors.textMuted, marginTop: 2 },
   viewProfileButton: { alignSelf: 'flex-start' },
+  referralRow: {
+    backgroundColor: colors.badgeBackground,
+    borderRadius: radius.md,
+    paddingVertical: space.sm,
+    paddingHorizontal: space.md,
+    marginTop: space.sm,
+    alignSelf: 'flex-start',
+  },
+  referralCode: {
+    ...type.title,
+    color: colors.accent,
+    letterSpacing: 2,
+  },
   sharingRow: { flexDirection: 'row', alignItems: 'center', marginTop: space.sm },
   sharingCopy: { flex: 1, paddingRight: space.md },
   sharingTitle: { ...type.bodyMedium, color: colors.text },

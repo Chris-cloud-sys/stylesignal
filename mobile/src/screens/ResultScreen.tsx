@@ -9,7 +9,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { File, Paths } from 'expo-file-system';
 import * as Sharing from 'expo-sharing';
 import React, { useRef, useState } from 'react';
-import { ActivityIndicator, Image, Linking, Pressable, ScrollView, Share, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Alert, Image, Linking, Pressable, ScrollView, Share, StyleSheet, Text, View } from 'react-native';
 import { captureRef } from 'react-native-view-shot';
 
 import {
@@ -45,7 +45,7 @@ import {
   Swatches,
 } from '../components/primitives';
 import { CommentSheet } from '../components/CommentSheet';
-import { ShareCard } from '../components/ShareCard';
+import { ShareCard, type ShareCardFormat } from '../components/ShareCard';
 import { OCCASIONS, type Occasion } from '../config';
 import { colors, radius, sentenceCase, space, type, weight } from '../theme';
 
@@ -174,7 +174,8 @@ function Complete({
 }): React.ReactElement {
   const feedback = outfit.feedback;
   const thumb = absoluteMediaUrl(outfit.thumb_url);
-  const shareCardRef = useRef<View>(null);
+  const storyCardRef = useRef<View>(null);
+  const squareCardRef = useRef<View>(null);
   const [sharing, setSharing] = useState(false);
   const [inWardrobe, setInWardrobe] = useState(outfit.in_wardrobe ?? false);
   const [addingToWardrobe, setAddingToWardrobe] = useState(false);
@@ -202,14 +203,27 @@ function Complete({
     }
   };
 
-  const handleShare = async (): Promise<void> => {
+  // SPEC+ (docs/spec-deviations.md #41) — Story and Square are two
+  // differently-shaped exports of the same card content, not two different
+  // designs; which one matches where the person is actually about to post
+  // is their call, not a guess baked into the button.
+  const shareAsFormat = async (format: ShareCardFormat): Promise<void> => {
     if (!feedback || sharing) return;
     setSharing(true);
     try {
-      await shareFeedbackImage(shareCardRef, feedback);
+      await shareFeedbackImage(format === 'story' ? storyCardRef : squareCardRef, feedback);
     } finally {
       setSharing(false);
     }
+  };
+
+  const handleShare = (): void => {
+    if (!feedback || sharing) return;
+    Alert.alert('Share this read', 'Choose a shape to export.', [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Story (9:16)', onPress: () => void shareAsFormat('story') },
+      { text: 'Square (1:1)', onPress: () => void shareAsFormat('square') },
+    ]);
   };
 
   // SPEC+ — wardrobe catalog (docs/spec-deviations.md). Only offered for an
@@ -328,6 +342,9 @@ function Complete({
       ) : null}
 
       {feedback ? <Headline feedback={feedback} /> : null}
+      {feedback && isStrongRead(feedback) ? (
+        <SharePeakNudge onShare={handleShare} busy={sharing} />
+      ) : null}
       {feedback && feedback.quick_reads.length > 0 ? (
         <QuickReads items={feedback.quick_reads} garments={outfit.garments ?? []} />
       ) : null}
@@ -369,14 +386,23 @@ function Complete({
 
       <Button label="Scan another outfit" onPress={onDone} style={styles.cta} />
 
-      {/* Off-screen — mounted so it's ready to capture, never shown to the user. */}
+      {/* Off-screen — both formats mounted so either is ready to capture the
+          moment the picker above resolves, never shown to the user. */}
       {feedback ? (
         <View style={styles.offscreen} pointerEvents="none">
           <ShareCard
-            ref={shareCardRef}
+            ref={storyCardRef}
             photoUri={thumb}
             occasion={outfit.occasion}
             feedback={feedback}
+            format="story"
+          />
+          <ShareCard
+            ref={squareCardRef}
+            photoUri={thumb}
+            occasion={outfit.occasion}
+            feedback={feedback}
+            format="square"
           />
         </View>
       ) : null}
@@ -511,6 +537,39 @@ async function shareFeedbackImage(
 }
 
 // --- Zone 1: headline (§7.7) -------------------------------------------------
+// --- Share at the emotional peak ---------------------------------------------
+// SPEC+ (docs/spec-deviations.md #41) — piggybacks entirely on meters
+// rules.py already computes deterministically; no new signal, no new
+// backend work. "Strong" on both is the moment §1's "personal style
+// confidence" use case actually lands — right before a date or interview —
+// so the nudge sits at the top, next to the verdict, not buried at the
+// bottom near the generic Share icon which stays there regardless.
+function isStrongRead(feedback: Feedback): boolean {
+  return feedback.occasion_match?.level === 'strong' && feedback.signal_clarity?.level === 'strong';
+}
+
+function SharePeakNudge({
+  onShare,
+  busy,
+}: {
+  onShare: () => void;
+  busy: boolean;
+}): React.ReactElement {
+  return (
+    <Pressable
+      onPress={onShare}
+      disabled={busy}
+      style={({ pressed }) => [styles.peakNudge, pressed && styles.shopRowPressed]}
+      accessibilityRole="button"
+      accessibilityLabel="This one's a good one to save — share it"
+    >
+      <Ionicons name="sparkles-outline" size={18} color={colors.accent} />
+      <Text style={styles.peakNudgeText}>This one's a good one to save.</Text>
+      <Text style={styles.peakNudgeLink}>Share</Text>
+    </Pressable>
+  );
+}
+
 function Headline({ feedback }: { feedback: Feedback }): React.ReactElement {
   const meters: Array<['occasion_match' | 'signal_clarity', MeterData | null | undefined]> = [
     ['occasion_match', feedback.occasion_match],
@@ -687,7 +746,7 @@ function ShopSimilar({ garments }: { garments: Garment[] }): React.ReactElement 
           accessibilityLabel={`Shop ${garmentShopLabel(garment)} on Amazon`}
         >
           <Text style={styles.shopLabel}>{garmentShopLabel(garment)}</Text>
-          <Ionicons name="open-outline" size={18} color={colors.textMuted} />
+          <Ionicons name="open-outline" size={18} color={colors.accent} />
         </Pressable>
       ))}
       <Text style={styles.shopDisclosure}>
@@ -886,8 +945,21 @@ const styles = StyleSheet.create({
     borderBottomColor: colors.border,
   },
   shopRowPressed: { opacity: 0.6 },
-  shopLabel: { ...type.body, color: colors.text },
+  shopLabel: { ...type.body, color: colors.accent, fontWeight: weight.medium },
   shopDisclosure: { ...type.meta, color: colors.textMuted, marginTop: space.sm },
+
+  peakNudge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: space.sm,
+    backgroundColor: colors.badgeBackground,
+    borderRadius: radius.md,
+    paddingVertical: space.sm,
+    paddingHorizontal: space.md,
+    marginBottom: space.md,
+  },
+  peakNudgeText: { ...type.meta, color: colors.text, flex: 1 },
+  peakNudgeLink: { ...type.meta, color: colors.accent, fontWeight: weight.medium },
 
   footnote: { ...type.meta, color: colors.textMuted },
   cta: { marginTop: space.lg, marginBottom: space.sm },

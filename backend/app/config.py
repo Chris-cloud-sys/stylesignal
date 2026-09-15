@@ -104,6 +104,11 @@ class Settings(BaseSettings):
     scans_earned_per_rating: int = 1
     ratings_per_earned_scan: int = 3
     pro_soft_monthly_cap: int = 300
+    # SPEC+ — referral bump (docs/spec-deviations.md). Both the inviter and
+    # the new account get this many bonus scans the moment the invitee
+    # registers with a valid code — credited once, at registration, not
+    # per-scan, so it can't be farmed by repeated activity.
+    referral_bonus_scans: int = 2
     max_upload_bytes: int = 12_000_000
     max_longest_edge: int = 1600
     thumb_longest_edge: int = 480

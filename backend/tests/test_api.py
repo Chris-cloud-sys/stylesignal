@@ -79,6 +79,72 @@ def test_register_login_refresh_me(client):
     assert body["quota"]["scans_remaining"] == 3
 
 
+def test_every_account_gets_a_unique_referral_code(client):
+    a = client.post(
+        "/v1/auth/register",
+        json={"email": "ref-a-{0}@x.com".format(uuid.uuid4().hex[:8]), "password": "a-long-password"},
+    ).json()
+    b = client.post(
+        "/v1/auth/register",
+        json={"email": "ref-b-{0}@x.com".format(uuid.uuid4().hex[:8]), "password": "a-long-password"},
+    ).json()
+
+    me_a = client.get(
+        "/v1/auth/me", headers={"Authorization": "Bearer " + a["access_token"]}
+    ).json()
+    me_b = client.get(
+        "/v1/auth/me", headers={"Authorization": "Bearer " + b["access_token"]}
+    ).json()
+    assert me_a["user"]["referral_code"]
+    assert me_a["user"]["referral_code"] != me_b["user"]["referral_code"]
+
+
+def test_registering_with_a_referral_code_credits_both_sides(client):
+    referrer = client.post(
+        "/v1/auth/register",
+        json={"email": "inviter-{0}@x.com".format(uuid.uuid4().hex[:8]), "password": "a-long-password"},
+    ).json()
+    referrer_me = client.get(
+        "/v1/auth/me", headers={"Authorization": "Bearer " + referrer["access_token"]}
+    ).json()
+    code = referrer_me["user"]["referral_code"]
+    assert referrer_me["quota"]["earned_scans"] == 0
+
+    invitee = client.post(
+        "/v1/auth/register",
+        json={
+            "email": "invitee-{0}@x.com".format(uuid.uuid4().hex[:8]),
+            "password": "a-long-password",
+            "referral_code": code,
+        },
+    ).json()
+    invitee_me = client.get(
+        "/v1/auth/me", headers={"Authorization": "Bearer " + invitee["access_token"]}
+    ).json()
+    assert invitee_me["quota"]["earned_scans"] == 2
+
+    referrer_me_after = client.get(
+        "/v1/auth/me", headers={"Authorization": "Bearer " + referrer["access_token"]}
+    ).json()
+    assert referrer_me_after["quota"]["earned_scans"] == 2
+
+
+def test_registering_with_an_unknown_referral_code_does_not_fail(client):
+    response = client.post(
+        "/v1/auth/register",
+        json={
+            "email": "noref-{0}@x.com".format(uuid.uuid4().hex[:8]),
+            "password": "a-long-password",
+            "referral_code": "NOTREAL1",
+        },
+    )
+    assert response.status_code == 201
+    me = client.get(
+        "/v1/auth/me", headers={"Authorization": "Bearer " + response.json()["access_token"]}
+    ).json()
+    assert me["quota"]["earned_scans"] == 0
+
+
 def test_new_account_has_no_avatar_by_default(auth_client):
     me = auth_client.get("/v1/auth/me").json()
     assert me["user"]["avatar_url"] is None
@@ -546,6 +612,53 @@ def test_feed_excludes_your_own_outfits(client):
     )
     assert again.status_code == 201
     assert again.json()["scans_earned"] == 0
+
+
+def test_browse_mode_keeps_rated_outfits_and_flags_them(client):
+    """SPEC+ — browsable feed (docs/spec-deviations.md #41). mode="rate"
+    (the default) excludes anything the caller has rated, permanently —
+    that's what makes the earn-by-rating loop unfarmable, but it also means
+    the outfit vanishes from view for good. mode="browse" is the same
+    query with that exclusion lifted: rated outfits stay visible, flagged
+    via rated_by_me so the client knows to hide the rating widget."""
+    author = client.post(
+        "/v1/auth/register",
+        json={"email": "browse-author-{0}@x.com".format(uuid.uuid4().hex[:8]), "password": "a-long-password"},
+    ).json()
+    client.headers.update({"Authorization": "Bearer " + author["access_token"]})
+    public = upload(client, is_public="true")
+    wait_for_terminal(client, public["outfit_id"])
+
+    rater = client.post(
+        "/v1/auth/register",
+        json={"email": "browse-rater-{0}@x.com".format(uuid.uuid4().hex[:8]), "password": "a-long-password"},
+    ).json()
+    client.headers.update({"Authorization": "Bearer " + rater["access_token"]})
+
+    # Unrated: present in both modes, rated_by_me False in both.
+    rate_items = {item["outfit_id"]: item for item in client.get("/v1/feed?mode=rate").json()["items"]}
+    browse_items = {item["outfit_id"]: item for item in client.get("/v1/feed?mode=browse").json()["items"]}
+    assert public["outfit_id"] in rate_items
+    assert public["outfit_id"] in browse_items
+    assert rate_items[public["outfit_id"]]["rated_by_me"] is False
+    assert browse_items[public["outfit_id"]]["rated_by_me"] is False
+    # The headline is exposed for browsing even before rating.
+    assert browse_items[public["outfit_id"]]["verdict_phrase"]
+
+    rated = client.post(
+        "/v1/outfits/{0}/ratings".format(public["outfit_id"]),
+        json={"dimension": "coherence", "value": 4},
+    )
+    assert rated.status_code == 201
+
+    # Rated: gone from mode="rate", still present in mode="browse", flagged.
+    rate_items_after = {item["outfit_id"] for item in client.get("/v1/feed?mode=rate").json()["items"]}
+    browse_items_after = {
+        item["outfit_id"]: item for item in client.get("/v1/feed?mode=browse").json()["items"]
+    }
+    assert public["outfit_id"] not in rate_items_after
+    assert public["outfit_id"] in browse_items_after
+    assert browse_items_after[public["outfit_id"]]["rated_by_me"] is True
 
 
 def test_private_outfits_never_reach_the_feed(client):

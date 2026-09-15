@@ -178,10 +178,16 @@ export async function register(
   email: string,
   password: string,
   displayName: string,
+  referralCode?: string,
 ): Promise<void> {
   const tokens = await request<TokenPair>(
     '/v1/auth/register',
-    json({ email, password, display_name: displayName }),
+    json({
+      email,
+      password,
+      display_name: displayName,
+      referral_code: referralCode ? referralCode.trim() : undefined,
+    }),
   );
   await storeTokens(tokens);
 }
@@ -315,9 +321,16 @@ export function fetchFavorites(cursor?: string | null): Promise<OutfitListRespon
 }
 
 // --- Community rating loop (§6.5) -------------------------------------------
-export function fetchFeed(cursor?: string | null): Promise<FeedResponse> {
-  const query = cursor ? `?limit=20&cursor=${encodeURIComponent(cursor)}` : '?limit=20';
-  return request<FeedResponse>(`/v1/feed${query}`);
+/** SPEC+ — mode="browse" (docs/spec-deviations.md). Default "rate" keeps
+ * the original disappearing-queue behaviour; "browse" is the same feed with
+ * nothing excluded once you've acted on it, newest-first. */
+export function fetchFeed(
+  cursor?: string | null,
+  mode: 'rate' | 'browse' = 'rate',
+): Promise<FeedResponse> {
+  const params = new URLSearchParams({ limit: '20', mode });
+  if (cursor) params.set('cursor', cursor);
+  return request<FeedResponse>(`/v1/feed?${params.toString()}`);
 }
 
 export function rateOutfit(

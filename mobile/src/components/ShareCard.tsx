@@ -15,8 +15,17 @@ import { Image, StyleSheet, Text, View } from 'react-native';
 import type { Feedback } from '../api/types';
 import { sentenceCase } from '../theme';
 
+/** SPEC+ (docs/spec-deviations.md) — 'story' (9:16, Instagram/Snapchat
+ * Stories) and 'square' (1:1, feed posts) are the two shapes that actually
+ * match where people share to, replacing the single fixed ~4:5 card. Same
+ * content and layout at any size — only the frame changes. */
+export type ShareCardFormat = 'story' | 'square';
+
 const CARD_WIDTH = 360;
-const CARD_HEIGHT = 450;
+const FORMAT_HEIGHT: Record<ShareCardFormat, number> = {
+  story: Math.round((CARD_WIDTH * 16) / 9),
+  square: CARD_WIDTH,
+};
 
 const METER_LABELS: Record<'occasion_match' | 'signal_clarity', string> = {
   occasion_match: 'Occasion match',
@@ -33,10 +42,11 @@ interface Props {
   photoUri?: string;
   occasion?: string | null;
   feedback: Feedback;
+  format?: ShareCardFormat;
 }
 
 export const ShareCard = React.forwardRef<View, Props>(function ShareCard(
-  { photoUri, occasion, feedback },
+  { photoUri, occasion, feedback, format = 'story' },
   ref,
 ): React.ReactElement {
   const meters: Array<['occasion_match' | 'signal_clarity', 'strong' | 'partial' | 'off']> = [];
@@ -46,7 +56,11 @@ export const ShareCard = React.forwardRef<View, Props>(function ShareCard(
   const subtitle = feedback.verdict_subtitle ?? feedback.quick_reads[0]?.text;
 
   return (
-    <View ref={ref} collapsable={false} style={styles.card}>
+    <View
+      ref={ref}
+      collapsable={false}
+      style={[styles.card, { height: FORMAT_HEIGHT[format] }]}
+    >
       {photoUri ? (
         <Image source={{ uri: photoUri }} style={styles.photo} resizeMode="cover" />
       ) : (
@@ -98,7 +112,6 @@ export const ShareCard = React.forwardRef<View, Props>(function ShareCard(
 const styles = StyleSheet.create({
   card: {
     width: CARD_WIDTH,
-    height: CARD_HEIGHT,
     borderRadius: 20,
     overflow: 'hidden',
     backgroundColor: '#0D0F14', // Midnight Ink — SPEC+ rebrand, see theme.ts

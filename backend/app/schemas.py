@@ -17,6 +17,10 @@ class RegisterRequest(BaseModel):
     email: EmailStr
     password: str = Field(min_length=8, max_length=200)
     display_name: str = Field(default="", max_length=80)
+    # SPEC+ — referral bump (docs/spec-deviations.md). Another member's own
+    # referral_code, optional. An unknown/malformed code is ignored, not
+    # rejected — registration should never fail over a typo'd invite.
+    referral_code: Optional[str] = Field(default=None, max_length=10)
 
 
 class LoginRequest(BaseModel):
@@ -83,6 +87,8 @@ class UserOut(BaseModel):
     # same way OutfitDetail.thumb_url is computed from Outfit.thumb_key.
     # None until the caller uploads one; never required.
     avatar_url: Optional[str] = None
+    # SPEC+ — referral bump (docs/spec-deviations.md). Every account has one.
+    referral_code: str
 
 
 class MeResponse(BaseModel):
@@ -299,6 +305,15 @@ class FeedItem(BaseModel):
     # False for the caller's own outfits too (you can't follow yourself) —
     # the mobile client hides the follow badge itself in that case.
     following_owner: bool = False
+    # SPEC+ — browsable feed (docs/spec-deviations.md). The headline of the
+    # read itself, so a browsable feed has something to actually read, not
+    # just a photo. None only if feedback somehow isn't attached to a
+    # "complete" outfit, which get_feed's query should never surface.
+    verdict_phrase: Optional[str] = None
+    # True when mode="browse" surfaced something the caller already rated —
+    # mode="rate" never does, since it excludes rated outfits outright. The
+    # client uses this to hide the rating widget without hiding the card.
+    rated_by_me: bool = False
 
 
 class FeedResponse(BaseModel):

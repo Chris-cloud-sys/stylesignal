@@ -53,6 +53,17 @@ def generate_reset_code() -> str:
     return "{0:06d}".format(secrets.randbelow(1_000_000))
 
 
+# SPEC+ — referral bump (docs/spec-deviations.md). Excludes 0/O/1/I so a
+# code read aloud or hand-copied from a screenshot doesn't misread; 8 chars
+# from a 32-symbol alphabet is ~40 bits, plenty for a per-user human-shared
+# code with a DB-level uniqueness retry, not a security secret.
+REFERRAL_CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
+
+
+def generate_referral_code(length: int = 8) -> str:
+    return "".join(secrets.choice(REFERRAL_CODE_ALPHABET) for _ in range(length))
+
+
 def hash_reset_code(code: str) -> str:
     return hashlib.sha256(code.encode("utf-8")).hexdigest()
 

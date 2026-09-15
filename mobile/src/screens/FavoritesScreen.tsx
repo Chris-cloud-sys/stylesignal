@@ -4,7 +4,7 @@
  * "Remove" per row; long-press-to-select replaces that, same as History. */
 import { Ionicons } from '@expo/vector-icons';
 import React, { useCallback, useEffect, useState } from 'react';
-import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Alert, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { absoluteMediaUrl, fetchFavorites, unfavoriteOutfit } from '../api/client';
 import type { OutfitListItem } from '../api/types';
@@ -13,9 +13,11 @@ import { colors, space, type } from '../theme';
 
 interface Props {
   onOpen: (outfitId: string) => void;
+  /** SPEC+ — genuinely browsable Favorites (docs/spec-deviations.md #42). */
+  onBrowse: (items: OutfitListItem[], initialIndex: number) => void;
 }
 
-export function FavoritesScreen({ onOpen }: Props): React.ReactElement {
+export function FavoritesScreen({ onOpen, onBrowse }: Props): React.ReactElement {
   const [items, setItems] = useState<OutfitListItem[]>([]);
   const [cursor, setCursor] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -54,6 +56,22 @@ export function FavoritesScreen({ onOpen }: Props): React.ReactElement {
       }
       return next;
     });
+  };
+
+  // SPEC+ — genuinely browsable Favorites (docs/spec-deviations.md #42).
+  const openItem = (item: OutfitListItem): void => {
+    if (item.status !== 'complete') {
+      onOpen(item.outfit_id);
+      return;
+    }
+    Alert.alert('Open this favorite', undefined, [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Read', onPress: () => onOpen(item.outfit_id) },
+      {
+        text: 'Browse',
+        onPress: () => onBrowse(items, items.findIndex((i) => i.outfit_id === item.outfit_id)),
+      },
+    ]);
   };
 
   const removeSelected = (): void => {
@@ -104,7 +122,7 @@ export function FavoritesScreen({ onOpen }: Props): React.ReactElement {
         data={items}
         keyExtractor={(item) => item.outfit_id}
         getThumbUrl={(item) => absoluteMediaUrl(item.thumb_url)}
-        onPress={(item) => (selecting ? toggleSelect(item.outfit_id) : onOpen(item.outfit_id))}
+        onPress={(item) => (selecting ? toggleSelect(item.outfit_id) : openItem(item))}
         onLongPress={(item) => toggleSelect(item.outfit_id)}
         isSelected={(item) => selected.has(item.outfit_id)}
         selecting={selecting}

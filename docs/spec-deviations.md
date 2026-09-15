@@ -1640,3 +1640,95 @@ raising `InvalidRequestError: ... returned no FROM clauses`. Six
 existing feed tests failed immediately, which is what surfaced it — the
 fix is `.correlate(Outfit)` on that one subquery, forcing SQLAlchemy to
 correlate only the table that's actually meant to vary per outer row.
+
+## 42. The real comment-sheet fix (round 5 — evidence, not another guess), and genuinely browsable grids everywhere
+
+**The comment-sheet bug, finally diagnosed with real evidence.** Four
+prior rounds (entry #39) were reasoned fixes, each explicitly flagged as
+unconfirmed — there was never hard evidence, just plausible theories
+from screenshots. This round did it differently: added `console.log` at
+the Post button's `onPressIn`, inside `send()`'s early-return/success/
+failure paths, and on the backdrop's `onPress`, then reproduced live
+against `adb logcat` while Chris tapped Post on-device.
+
+**Result: none of those handlers fired at all** — not `onPressIn`, not
+even the full-screen backdrop's `onPress`. That's a different class of
+bug than every prior theory assumed. Rounds 1–4 all reasoned from "the
+button is there, but something races it out from under the tap" — a
+JS-side timing problem. Zero events firing rules that out completely:
+the touch never reached React Native's touch-dispatch system in the
+first place, anywhere in the sheet's view tree, not just at the button.
+That points at Android's own gesture-navigation edge zone — a strip at
+the screen's bottom edge that the OS reserves for system gestures (back/
+home) and never delivers to any app view, by design, regardless of what
+renders there.
+
+Checked against that theory: `CommentSheet.tsx` never called
+`useSafeAreaInsets()` anywhere, unlike every other bottom-pinned surface
+in the app — `TabBar.tsx` already does (`paddingBottom:
+Math.max(insets.bottom, space.xs)`), and works fine. The sheet's own
+`paddingBottom` was a flat `space.lg`, with no device-specific inset
+reserved at all, so on a device where that system gesture strip is
+taller than `space.lg`, the composer (Post button included) could render
+partly inside it — a tap landing there is swallowed by the OS before
+delivery to the app, coincidentally also dismissing the keyboard as a
+side effect (ordinary system behavior for a touch outside the IME's own
+extraction view, nothing our code does). This also explains why it read
+as "the keyboard just collapses" rather than any visible app error: the
+app never saw the tap to have an error about.
+
+Fix: `paddingBottom: space.lg + insets.bottom` on the sheet, applied
+unconditionally (not just when the keyboard is closed), so nothing
+tappable ever renders inside that reserved strip regardless of keyboard
+state. The `onPressIn`-vs-`onPress` change and `KEYBOARD_GAP` from
+rounds 3–4 stay — they fixed real, separate problems (mis-taps onto the
+keyboard's own suggestion strip) — this is additive, not a revert.
+Diagnostic `console.log` calls are left in for one more on-device round
+to get a clean confirmation (an actual successful post, logged) before
+stripping them.
+
+**Genuinely browsable grids — History, Favorites, and a member's
+profile.** Chris liked the History photo grid but wanted tapping into it
+to offer two things: "Read" (today's full ResultScreen, unchanged) and
+"Browse" (a swipeable feed-card view — photo, verdict headline, the same
+TikTok-style rail Community's own Browse mode uses — scoped to that
+grid's own list, starting at whichever photo was tapped). Confirmed
+scope before building: Browse scrolls through the *entire* list in
+order, not just the one tapped item — otherwise it's just a re-skinned
+single-item view, not actually "browsable." Extended to the two other
+grids ranked as good fits (Favorites — the same case as History almost
+exactly; a member's public profile — arguably the best fit, since it
+already mirrors what Community Browse does, just scoped to one person).
+Wardrobe deliberately left untouched — individual garment scans for
+cataloguing, not a "browse my looks" narrative.
+
+One shared item shape, not three. `OutfitListItem` (already used by
+History, Favorites, and a profile's outfit list) gained the same
+rail/headline fields `FeedItem` already had — `verdict_phrase`,
+`liked_by_me`, `favorited_by_me`, `comment_count`, `owner_id`,
+`owner_display_name`, `owner_avatar_url`, `following_owner` — via a new
+shared module (`app/outfit_cards.py`, batch queries, one per page not
+N+1) that `routers/outfits.py` and `routers/users.py` both import,
+rather than three parallel enrichment implementations. Each endpoint's
+shape of "owner" differs and is handled accordingly: History's owner is
+always the caller (set directly, no query needed); Favorites can hold
+someone else's public outfit (favoriting isn't restricted to your own),
+so it batch-joins the real owner per row; a profile's outfits all share
+one already-known owner (the profile itself).
+
+Mobile: a new shared `components/BrowseFeed.tsx` (a `FlatList` of cards,
+`initialScrollIndex` set to the tapped item, `onScrollToIndexFailed`
+retried once — the card's height varies with rail/verdict length, so
+`getItemLayout` can't give FlatList an exact offset up front) — reused
+as-is by History, Favorites, and a profile's grid, differing only in
+which items feed it. It fetches the viewer's own id once (`fetchMe()`)
+to decide per-card whether to show the like/follow toggle at all (an
+own item hides both — `_likeable_outfit` blocks self-likes server-side
+the same way Community's feed already does) or the read-only like count
+instead. `App.tsx` gained one new `Screen` variant, `browse` (holding the
+item list, the tapped index, and the screen to return to), following the
+same hand-rolled-switcher pattern as every other destination — no new
+navigation library. Tapping a grid photo now opens an `Alert.alert`
+picker ("Read" / "Browse"), the same action-sheet pattern already used
+for the Story/Square share-format picker (entry #41) and Wardrobe's
+delete confirmation, rather than inventing a new UI mechanism for it.

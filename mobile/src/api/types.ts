@@ -109,6 +109,18 @@ export interface OutfitListItem {
   occasion?: string | null;
   created_at: string;
   like_count?: number | null;
+  /** SPEC+ — genuinely browsable grids (docs/spec-deviations.md #42). Same
+   * rail/headline fields as FeedItem, added to this one shared item shape
+   * so History/Favorites/a profile's grid can all open the same Browse
+   * card. Populated only by endpoints that enrich it. */
+  verdict_phrase?: string | null;
+  liked_by_me: boolean;
+  favorited_by_me: boolean;
+  comment_count: number;
+  owner_id?: string | null;
+  owner_display_name?: string | null;
+  owner_avatar_url?: string | null;
+  following_owner: boolean;
 }
 
 export interface OutfitListResponse {

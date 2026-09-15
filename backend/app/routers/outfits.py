@@ -22,6 +22,13 @@ from ..deps import get_current_user
 from ..errors import APIError, bad_request, not_found
 from ..jobs import get_queue
 from ..models import Comment, Favorite, Like, Outfit, User, WardrobeItem
+from ..outfit_cards import (
+    batch_comment_counts,
+    batch_favorited_by_me,
+    batch_following,
+    batch_liked_by_me,
+    batch_verdict_phrases,
+)
 from ..quota import consume_scan, refund_scan
 from ..schemas import (
     ColourOut,
@@ -305,7 +312,17 @@ def list_outfits(
         _reap_if_stale(db, row)
 
     storage = get_storage()
+    outfit_ids = [row.id for row in rows]
     like_counts = _like_counts([row.id for row in rows if row.is_public], db)
+    comment_counts = batch_comment_counts(db, outfit_ids)
+    verdict_phrases = batch_verdict_phrases(db, outfit_ids)
+    favorited = batch_favorited_by_me(db, outfit_ids, user.id)
+    # SPEC+ — genuinely browsable History (docs/spec-deviations.md). Every
+    # item here is the caller's own, so owner_* is always the caller and
+    # following_owner is always False (you can't follow yourself) — set
+    # directly rather than batch-queried, since it never varies per row.
+    own_avatar_url = storage.signed_url(user.avatar_key) if user.avatar_key else None
+    own_display_name = (user.display_name or "").strip() or user.email.split("@")[0]
     items = [
         OutfitListItem(
             outfit_id=row.id,
@@ -314,6 +331,12 @@ def list_outfits(
             occasion=row.occasion,
             created_at=row.created_at,
             like_count=like_counts.get(row.id) if row.is_public else None,
+            verdict_phrase=verdict_phrases.get(row.id),
+            favorited_by_me=row.id in favorited,
+            comment_count=comment_counts.get(row.id, 0),
+            owner_id=user.id,
+            owner_display_name=own_display_name,
+            owner_avatar_url=own_avatar_url,
         )
         for row in rows
     ]
@@ -345,8 +368,9 @@ def list_favorites(
     # timeline. Reuses OutfitListItem/the History cursor shape rather than
     # inventing a parallel one, since the row rendering is identical.
     statement = (
-        select(Outfit, Favorite.created_at.label("favorited_at"))
+        select(Outfit, Favorite.created_at.label("favorited_at"), User)
         .join(Favorite, Favorite.outfit_id == Outfit.id)
+        .join(User, User.id == Outfit.user_id)
         .where(
             Favorite.user_id == user.id,
             Outfit.deleted_at.is_(None),
@@ -372,7 +396,12 @@ def list_favorites(
     rows = rows[:limit]
 
     storage = get_storage()
-    like_counts = _like_counts([outfit.id for outfit, _favorited_at in rows], db)
+    outfit_ids = [outfit.id for outfit, _favorited_at, _owner in rows]
+    like_counts = _like_counts(outfit_ids, db)
+    comment_counts = batch_comment_counts(db, outfit_ids)
+    verdict_phrases = batch_verdict_phrases(db, outfit_ids)
+    liked = batch_liked_by_me(db, outfit_ids, user.id)
+    following = batch_following(db, [owner.id for _outfit, _favorited_at, owner in rows], user.id)
     items = [
         OutfitListItem(
             outfit_id=outfit.id,
@@ -381,8 +410,18 @@ def list_favorites(
             occasion=outfit.occasion,
             created_at=outfit.created_at,
             like_count=like_counts.get(outfit.id),
+            verdict_phrase=verdict_phrases.get(outfit.id),
+            # A favorites list is, by definition, everything favorited_by_me
+            # — no need to batch-query what's already the filter.
+            favorited_by_me=True,
+            liked_by_me=outfit.id in liked,
+            comment_count=comment_counts.get(outfit.id, 0),
+            owner_id=owner.id,
+            owner_display_name=(owner.display_name or "").strip() or owner.email.split("@")[0],
+            owner_avatar_url=storage.signed_url(owner.avatar_key) if owner.avatar_key else None,
+            following_owner=owner.id != user.id and owner.id in following,
         )
-        for outfit, _favorited_at in rows
+        for outfit, _favorited_at, owner in rows
     ]
 
     next_cursor = (

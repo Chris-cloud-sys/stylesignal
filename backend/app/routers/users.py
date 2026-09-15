@@ -15,6 +15,12 @@ from ..db import get_db
 from ..deps import get_current_user
 from ..errors import bad_request, not_found
 from ..models import Follow, Outfit, User
+from ..outfit_cards import (
+    batch_comment_counts,
+    batch_favorited_by_me,
+    batch_liked_by_me,
+    batch_verdict_phrases,
+)
 from ..schemas import FollowResponse, OutfitListItem, UserProfileOut
 from ..storage import get_storage
 
@@ -78,6 +84,17 @@ def get_user_profile(
     )
 
     storage = get_storage()
+    # SPEC+ — genuinely browsable profile grid (docs/spec-deviations.md).
+    # Every item here belongs to `target`, the one profile being viewed —
+    # owner_* and following_owner are the same for every row, so they're
+    # set directly rather than batch-queried per outfit (nothing to vary).
+    outfit_ids = [outfit.id for outfit in rows]
+    comment_counts = batch_comment_counts(db, outfit_ids)
+    verdict_phrases = batch_verdict_phrases(db, outfit_ids)
+    favorited = batch_favorited_by_me(db, outfit_ids, user.id)
+    liked = batch_liked_by_me(db, outfit_ids, user.id)
+    target_display_name = _display_name(target)
+    target_avatar_url = storage.signed_url(target.avatar_key) if target.avatar_key else None
     items = [
         OutfitListItem(
             outfit_id=outfit.id,
@@ -85,6 +102,19 @@ def get_user_profile(
             thumb_url=storage.signed_url(outfit.thumb_key) if outfit.image_sha256 else None,
             occasion=outfit.occasion,
             created_at=outfit.created_at,
+            verdict_phrase=verdict_phrases.get(outfit.id),
+            favorited_by_me=outfit.id in favorited,
+            # A profile never shows the viewer's own outfits with a like
+            # toggle — _likeable_outfit blocks self-likes the same way the
+            # Community feed does — but liked_by_me is still correct to
+            # compute; is_self=True profiles just never actually carry a
+            # True value here since a self-like row can never exist.
+            liked_by_me=outfit.id in liked,
+            comment_count=comment_counts.get(outfit.id, 0),
+            owner_id=target.id,
+            owner_display_name=target_display_name,
+            owner_avatar_url=target_avatar_url,
+            following_owner=is_following,
         )
         for outfit in rows
     ]
@@ -92,8 +122,8 @@ def get_user_profile(
 
     return UserProfileOut(
         user_id=target.id,
-        display_name=_display_name(target),
-        avatar_url=storage.signed_url(target.avatar_key) if target.avatar_key else None,
+        display_name=target_display_name,
+        avatar_url=target_avatar_url,
         follower_count=_follower_count(db, user_id),
         following_count=following_count,
         outfit_count=outfit_count,

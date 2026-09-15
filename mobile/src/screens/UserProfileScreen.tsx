@@ -3,7 +3,7 @@
  * photo grid (see components/PhotoGrid.tsx). Read-only — no long-press
  * select/delete, since these aren't the caller's own outfits. */
 import React, { useCallback, useEffect, useState } from 'react';
-import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Alert, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { absoluteMediaUrl, fetchUserProfile, followUser, unfollowUser } from '../api/client';
 import type { OutfitListItem, UserProfile } from '../api/types';
@@ -15,9 +15,16 @@ interface Props {
   userId: string;
   onBack: () => void;
   onOpenOutfit: (outfitId: string) => void;
+  /** SPEC+ — genuinely browsable profile grid (docs/spec-deviations.md #42). */
+  onBrowse: (items: OutfitListItem[], initialIndex: number) => void;
 }
 
-export function UserProfileScreen({ userId, onBack, onOpenOutfit }: Props): React.ReactElement {
+export function UserProfileScreen({
+  userId,
+  onBack,
+  onOpenOutfit,
+  onBrowse,
+}: Props): React.ReactElement {
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [items, setItems] = useState<OutfitListItem[]>([]);
   const [cursor, setCursor] = useState<string | null>(null);
@@ -87,6 +94,20 @@ export function UserProfileScreen({ userId, onBack, onOpenOutfit }: Props): Reac
     }
   };
 
+  // SPEC+ — genuinely browsable profile grid (docs/spec-deviations.md #42).
+  // Every outfit a profile lists is already "complete" (get_user_profile
+  // only ever returns completed public outfits), so no status check here.
+  const openItem = (item: OutfitListItem): void => {
+    Alert.alert('Open this read', undefined, [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Read', onPress: () => onOpenOutfit(item.outfit_id) },
+      {
+        text: 'Browse',
+        onPress: () => onBrowse(items, items.findIndex((i) => i.outfit_id === item.outfit_id)),
+      },
+    ]);
+  };
+
   if (loading) {
     return (
       <View style={styles.centered}>
@@ -109,7 +130,7 @@ export function UserProfileScreen({ userId, onBack, onOpenOutfit }: Props): Reac
         data={items}
         keyExtractor={(item) => item.outfit_id}
         getThumbUrl={(item) => absoluteMediaUrl(item.thumb_url)}
-        onPress={(item) => onOpenOutfit(item.outfit_id)}
+        onPress={openItem}
         accessibilityLabel={(item) =>
           item.occasion ? `${item.occasion} read` : 'Read with no occasion tagged'
         }

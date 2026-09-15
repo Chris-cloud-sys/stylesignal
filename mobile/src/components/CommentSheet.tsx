@@ -21,6 +21,7 @@ import {
   TextInput,
   View,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { fetchComments, fetchMe, fetchReplies, likeComment, postComment, unlikeComment } from '../api/client';
 import type { Comment } from '../api/types';
@@ -81,6 +82,19 @@ interface Props {
 
 export function CommentSheet({ outfitId, visible, onClose, onCountChange }: Props): React.ReactElement {
   const keyboardHeight = useKeyboardHeight();
+  // SPEC+ (docs/spec-deviations.md #39, round 5) — the real cause of "Post
+  // silently dismisses the keyboard instead of posting": confirmed via a
+  // real device reproduction with diagnostic logging (not reasoned from a
+  // screenshot, unlike every earlier round here) that NEITHER the Post
+  // button's onPressIn NOR the full-screen backdrop's onPress fired at
+  // all when the bug happened — the tap never reached React Native's touch
+  // system in the first place. That rules out a JS-side timing race
+  // entirely and points at Android's own gesture-navigation edge zone
+  // swallowing the touch before delivery to any app view, which happens
+  // when tappable content renders inside that OS-reserved strip. Every
+  // other bottom-pinned element in this app (TabBar.tsx) already accounts
+  // for `insets.bottom`; this sheet never did.
+  const insets = useSafeAreaInsets();
   const [items, setItems] = useState<Comment[]>([]);
   const [totalCount, setTotalCount] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -284,6 +298,11 @@ export function CommentSheet({ outfitId, visible, onClose, onCountChange }: Prop
                 SHEET_MAX_HEIGHT,
                 WINDOW_HEIGHT - keyboardHeight - KEYBOARD_GAP - space.xl,
               ),
+              // The fix (see the insets comment above): reserve the
+              // system gesture strip inside the sheet's own bottom
+              // padding, always — not just when the keyboard is closed —
+              // so the composer/Post button never renders inside it.
+              paddingBottom: space.lg + insets.bottom,
             },
           ]}
         >

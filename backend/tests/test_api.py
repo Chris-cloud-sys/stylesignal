@@ -380,6 +380,82 @@ def test_history_lists_newest_first_and_paginates(auth_client):
     assert not first_page_ids & {item["outfit_id"] for item in second["items"]}
 
 
+def test_history_items_carry_verdict_and_comment_count_for_browse(auth_client):
+    """SPEC+ — genuinely browsable grids (docs/spec-deviations.md #42).
+    History reuses the same enriched OutfitListItem shape FeedItem already
+    has, so a History Browse card has a headline and counts, not just a
+    photo."""
+    outfit_id = upload(auth_client)["outfit_id"]
+    wait_for_terminal(auth_client, outfit_id)
+    auth_client.post(
+        "/v1/outfits/{0}/comments".format(outfit_id), json={"body": "note to self"}
+    )
+    auth_client.post("/v1/outfits/{0}/favorites".format(outfit_id))
+
+    item = next(
+        item
+        for item in auth_client.get("/v1/outfits").json()["items"]
+        if item["outfit_id"] == outfit_id
+    )
+    assert item["verdict_phrase"]
+    assert item["comment_count"] == 1
+    assert item["favorited_by_me"] is True
+    assert item["owner_id"] is not None
+
+
+def test_favorites_items_carry_the_original_owners_identity(client):
+    """A favorite can be someone else's public outfit — the Browse card
+    needs that owner's identity, not the viewer's own."""
+    author = client.post(
+        "/v1/auth/register",
+        json={"email": "favowner-{0}@x.com".format(uuid.uuid4().hex[:8]), "password": "a-long-password"},
+    ).json()
+    client.headers.update({"Authorization": "Bearer " + author["access_token"]})
+    public = upload(client, is_public="true")
+    wait_for_terminal(client, public["outfit_id"])
+    author_me = client.get("/v1/auth/me").json()
+
+    fan = client.post(
+        "/v1/auth/register",
+        json={"email": "fan-{0}@x.com".format(uuid.uuid4().hex[:8]), "password": "a-long-password"},
+    ).json()
+    client.headers.update({"Authorization": "Bearer " + fan["access_token"]})
+    client.post("/v1/outfits/{0}/favorites".format(public["outfit_id"]))
+
+    item = next(
+        item
+        for item in client.get("/v1/outfits/favorites").json()["items"]
+        if item["outfit_id"] == public["outfit_id"]
+    )
+    assert item["owner_id"] == author_me["user"]["id"]
+    assert item["favorited_by_me"] is True
+    assert item["verdict_phrase"]
+
+
+def test_profile_outfits_carry_verdict_and_liked_by_me(client):
+    author = client.post(
+        "/v1/auth/register",
+        json={"email": "profowner-{0}@x.com".format(uuid.uuid4().hex[:8]), "password": "a-long-password"},
+    ).json()
+    client.headers.update({"Authorization": "Bearer " + author["access_token"]})
+    public = upload(client, is_public="true")
+    wait_for_terminal(client, public["outfit_id"])
+    author_id = client.get("/v1/auth/me").json()["user"]["id"]
+
+    viewer = client.post(
+        "/v1/auth/register",
+        json={"email": "viewer-{0}@x.com".format(uuid.uuid4().hex[:8]), "password": "a-long-password"},
+    ).json()
+    client.headers.update({"Authorization": "Bearer " + viewer["access_token"]})
+    client.post("/v1/outfits/{0}/likes".format(public["outfit_id"]))
+
+    profile = client.get("/v1/users/{0}/profile".format(author_id)).json()
+    item = next(item for item in profile["outfits"] if item["outfit_id"] == public["outfit_id"])
+    assert item["verdict_phrase"]
+    assert item["liked_by_me"] is True
+    assert item["owner_id"] == author_id
+
+
 def test_bad_cursor_is_a_clean_400(auth_client):
     response = auth_client.get("/v1/outfits?cursor=not-a-cursor")
     assert response.status_code == 400

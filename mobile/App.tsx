@@ -15,7 +15,8 @@ import {
 } from 'react-native-safe-area-context';
 
 import { clearSession, fetchMe, loadStoredSession } from './src/api/client';
-import type { Quota } from './src/api/types';
+import type { OutfitListItem, Quota } from './src/api/types';
+import { BrowseFeed } from './src/components/BrowseFeed';
 import { TabBar, type TabName } from './src/components/TabBar';
 import { AddProfilePictureScreen } from './src/screens/AddProfilePictureScreen';
 import { CaptureScreen } from './src/screens/CaptureScreen';
@@ -46,7 +47,8 @@ type Screen =
   | { name: 'upgrade' }
   | { name: 'userProfile'; userId: string; from: TabName }
   | { name: 'insights' }
-  | { name: 'wardrobe' };
+  | { name: 'wardrobe' }
+  | { name: 'browse'; items: OutfitListItem[]; initialIndex: number; back: Screen };
 
 /** The five tab screens share the persistent bottom bar; result/upgrade/
  * auth screens are full-takeover and hide it. */
@@ -146,11 +148,21 @@ export default function App(): React.ReactElement {
           ) : null}
 
           {screen.name === 'favorites' ? (
-            <FavoritesScreen onOpen={(outfitId) => setScreen({ name: 'result', outfitId })} />
+            <FavoritesScreen
+              onOpen={(outfitId) => setScreen({ name: 'result', outfitId })}
+              onBrowse={(items, initialIndex) =>
+                setScreen({ name: 'browse', items, initialIndex, back: screen })
+              }
+            />
           ) : null}
 
           {screen.name === 'history' ? (
-            <HistoryScreen onOpen={(outfitId) => setScreen({ name: 'result', outfitId })} />
+            <HistoryScreen
+              onOpen={(outfitId) => setScreen({ name: 'result', outfitId })}
+              onBrowse={(items, initialIndex) =>
+                setScreen({ name: 'browse', items, initialIndex, back: screen })
+              }
+            />
           ) : null}
 
           {screen.name === 'feed' ? (
@@ -186,6 +198,18 @@ export default function App(): React.ReactElement {
               userId={screen.userId}
               onBack={() => setScreen({ name: screen.from } as Screen)}
               onOpenOutfit={(outfitId) => setScreen({ name: 'result', outfitId })}
+              onBrowse={(items, initialIndex) =>
+                setScreen({ name: 'browse', items, initialIndex, back: screen })
+              }
+            />
+          ) : null}
+
+          {screen.name === 'browse' ? (
+            <BrowseFeed
+              items={screen.items}
+              initialIndex={screen.initialIndex}
+              onBack={() => setScreen(screen.back)}
+              onOpenProfile={(userId) => setScreen({ name: 'userProfile', userId, from: 'profile' })}
             />
           ) : null}
 

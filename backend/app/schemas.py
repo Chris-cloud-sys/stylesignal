@@ -218,6 +218,20 @@ class OutfitListItem(BaseModel):
     occasion: Optional[str] = None
     created_at: datetime
     like_count: Optional[int] = None
+    # SPEC+ — genuinely browsable grids (docs/spec-deviations.md). Same
+    # rail/headline fields as FeedItem, added to the one shared item shape
+    # so History/Favorites/a profile's grid can all open the same swipeable
+    # Browse card FeedItem already uses, not a second, parallel shape.
+    # Optional/defaulted so nothing that already consumes OutfitListItem
+    # breaks — populated only by endpoints that now enrich it.
+    verdict_phrase: Optional[str] = None
+    liked_by_me: bool = False
+    favorited_by_me: bool = False
+    comment_count: int = 0
+    owner_id: Optional[uuid.UUID] = None
+    owner_display_name: Optional[str] = None
+    owner_avatar_url: Optional[str] = None
+    following_owner: bool = False
 
 
 class OutfitListResponse(BaseModel):

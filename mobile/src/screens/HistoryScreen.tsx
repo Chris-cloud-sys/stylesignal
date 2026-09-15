@@ -6,6 +6,7 @@ import { ActivityIndicator, Alert, Pressable, StyleSheet, Text, View } from 'rea
 import { absoluteMediaUrl, deleteOutfit, fetchHistory } from '../api/client';
 import type { OutfitListItem } from '../api/types';
 import { GridStatusBadge, PhotoGrid } from '../components/PhotoGrid';
+import { type GridMode, ReadBrowseToggle } from '../components/ReadBrowseToggle';
 import { colors, space, type } from '../theme';
 
 interface Props {
@@ -22,6 +23,7 @@ export function HistoryScreen({ onOpen, onBrowse }: Props): React.ReactElement {
   const [error, setError] = useState<string | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const selecting = selected.size > 0;
+  const [mode, setMode] = useState<GridMode>('read');
 
   const load = useCallback(async (nextCursor?: string | null): Promise<void> => {
     try {
@@ -55,22 +57,18 @@ export function HistoryScreen({ onOpen, onBrowse }: Props): React.ReactElement {
     });
   };
 
-  // SPEC+ — genuinely browsable History (docs/spec-deviations.md #42). Only
-  // offered for a completed scan — Browse's card format needs the verdict/
-  // rail a pending or failed scan doesn't have; those still just open Read.
+  // SPEC+ — genuinely browsable History (docs/spec-deviations.md #42,
+  // round 2). The persistent toggle above the grid picks the mode; tapping
+  // a photo just does that mode's action immediately, no per-tap picker.
+  // Browse still needs a completed scan (the card format needs the
+  // verdict/rail a pending or failed scan doesn't have) — one without
+  // falls back to Read regardless of the toggle.
   const openItem = (item: OutfitListItem): void => {
-    if (item.status !== 'complete') {
+    if (mode === 'browse' && item.status === 'complete') {
+      onBrowse(items, items.findIndex((i) => i.outfit_id === item.outfit_id));
+    } else {
       onOpen(item.outfit_id);
-      return;
     }
-    Alert.alert('Open this scan', undefined, [
-      { text: 'Cancel', style: 'cancel' },
-      { text: 'Read', onPress: () => onOpen(item.outfit_id) },
-      {
-        text: 'Browse',
-        onPress: () => onBrowse(items, items.findIndex((i) => i.outfit_id === item.outfit_id)),
-      },
-    ]);
   };
 
   const deleteSelected = (): void => {
@@ -127,6 +125,8 @@ export function HistoryScreen({ onOpen, onBrowse }: Props): React.ReactElement {
           <Text style={styles.title}>History</Text>
         )}
       </View>
+
+      {!selecting ? <ReadBrowseToggle mode={mode} onChange={setMode} /> : null}
 
       {error ? <Text style={styles.error}>{error}</Text> : null}
 

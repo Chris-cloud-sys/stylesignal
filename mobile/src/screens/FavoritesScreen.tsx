@@ -4,11 +4,12 @@
  * "Remove" per row; long-press-to-select replaces that, same as History. */
 import { Ionicons } from '@expo/vector-icons';
 import React, { useCallback, useEffect, useState } from 'react';
-import { ActivityIndicator, Alert, Pressable, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { absoluteMediaUrl, fetchFavorites, unfavoriteOutfit } from '../api/client';
 import type { OutfitListItem } from '../api/types';
 import { GridStatusBadge, PhotoGrid } from '../components/PhotoGrid';
+import { type GridMode, ReadBrowseToggle } from '../components/ReadBrowseToggle';
 import { colors, space, type } from '../theme';
 
 interface Props {
@@ -25,6 +26,7 @@ export function FavoritesScreen({ onOpen, onBrowse }: Props): React.ReactElement
   const [error, setError] = useState<string | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const selecting = selected.size > 0;
+  const [mode, setMode] = useState<GridMode>('read');
 
   const load = useCallback(async (nextCursor?: string | null): Promise<void> => {
     try {
@@ -58,20 +60,14 @@ export function FavoritesScreen({ onOpen, onBrowse }: Props): React.ReactElement
     });
   };
 
-  // SPEC+ — genuinely browsable Favorites (docs/spec-deviations.md #42).
+  // SPEC+ — genuinely browsable Favorites (docs/spec-deviations.md #42,
+  // round 2). Same persistent toggle as History — see its comment.
   const openItem = (item: OutfitListItem): void => {
-    if (item.status !== 'complete') {
+    if (mode === 'browse' && item.status === 'complete') {
+      onBrowse(items, items.findIndex((i) => i.outfit_id === item.outfit_id));
+    } else {
       onOpen(item.outfit_id);
-      return;
     }
-    Alert.alert('Open this favorite', undefined, [
-      { text: 'Cancel', style: 'cancel' },
-      { text: 'Read', onPress: () => onOpen(item.outfit_id) },
-      {
-        text: 'Browse',
-        onPress: () => onBrowse(items, items.findIndex((i) => i.outfit_id === item.outfit_id)),
-      },
-    ]);
   };
 
   const removeSelected = (): void => {
@@ -115,6 +111,8 @@ export function FavoritesScreen({ onOpen, onBrowse }: Props): React.ReactElement
           <Text style={styles.title}>Favorites</Text>
         )}
       </View>
+
+      {!selecting ? <ReadBrowseToggle mode={mode} onChange={setMode} /> : null}
 
       {error ? <Text style={styles.error}>{error}</Text> : null}
 

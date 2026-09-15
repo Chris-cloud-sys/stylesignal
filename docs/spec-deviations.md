@@ -1732,3 +1732,18 @@ navigation library. Tapping a grid photo now opens an `Alert.alert`
 picker ("Read" / "Browse"), the same action-sheet pattern already used
 for the Story/Square share-format picker (entry #41) and Wardrobe's
 delete confirmation, rather than inventing a new UI mechanism for it.
+
+**Round 2, same day**: the per-tap `Alert.alert` picker felt intrusive
+in practice — every single tap interrupted with a dialog. Replaced with
+a persistent `ReadBrowseToggle` (new shared component) above each grid —
+same segmented-control look as Community's Rate/Browse and Profile's
+Light/Dark/System — flipped once, after which every tap on a photo does
+that mode's action immediately, no dialog at all. Deliberately doesn't
+reuse long-press, which stays reserved for History/Favorites' existing
+select-to-delete flow. One placement wrinkle worth noting: History and
+Favorites render the toggle in their own un-padded header row, so it
+carries its own `paddingHorizontal`; a profile's grid renders it inside
+`PhotoGrid`'s `ListHeaderComponent`, which sits inside the grid's own
+already-padded content container — passed `style={{paddingHorizontal:
+0}}` there rather than stacking two paddings and ending up visibly more
+indented than the other two screens.

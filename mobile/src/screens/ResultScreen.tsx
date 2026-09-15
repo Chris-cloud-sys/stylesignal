@@ -9,7 +9,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { File, Paths } from 'expo-file-system';
 import * as Sharing from 'expo-sharing';
 import React, { useRef, useState } from 'react';
-import { ActivityIndicator, Image, Pressable, ScrollView, Share, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Image, Linking, Pressable, ScrollView, Share, StyleSheet, Text, View } from 'react-native';
 import { captureRef } from 'react-native-view-shot';
 
 import {
@@ -20,6 +20,7 @@ import {
   rereadOutfit,
   unfavoriteOutfit,
 } from '../api/client';
+import { amazonSearchUrl, garmentShopLabel } from '../amazon';
 import type {
   FailureReason,
   Feedback,
@@ -332,6 +333,13 @@ function Complete({
       ) : null}
       {feedback && feedback.elevate_suggestion ? (
         <ElevateSuggestion text={feedback.elevate_suggestion} />
+      ) : null}
+
+      {outfit.garments && outfit.garments.length > 0 ? (
+        <>
+          <Divider />
+          <ShopSimilar garments={outfit.garments} />
+        </>
       ) : null}
 
       {feedback ? (
@@ -661,6 +669,35 @@ function GarmentRow({
   );
 }
 
+// --- Shop similar ------------------------------------------------------------
+// SPEC+ (docs/spec-deviations.md #40) — a plain tagged Amazon search link per
+// detected garment, not a real product card. The account behind the tag
+// isn't PA-API-eligible yet (see the same entry); this is what ships until
+// it is, without blocking the feature on that.
+function ShopSimilar({ garments }: { garments: Garment[] }): React.ReactElement {
+  return (
+    <View style={styles.shopSimilar}>
+      <SectionLabel>Shop similar</SectionLabel>
+      {garments.map((garment) => (
+        <Pressable
+          key={garment.garment_id}
+          onPress={() => void Linking.openURL(amazonSearchUrl(garment))}
+          style={({ pressed }) => [styles.shopRow, pressed && styles.shopRowPressed]}
+          accessibilityRole="button"
+          accessibilityLabel={`Shop ${garmentShopLabel(garment)} on Amazon`}
+        >
+          <Text style={styles.shopLabel}>{garmentShopLabel(garment)}</Text>
+          <Ionicons name="open-outline" size={18} color={colors.textMuted} />
+        </Pressable>
+      ))}
+      <Text style={styles.shopDisclosure}>
+        Opens Amazon in your browser or app. As an Amazon Associate we earn from
+        qualifying purchases.
+      </Text>
+    </View>
+  );
+}
+
 // --- Shared state screen ---------------------------------------------------
 function Centered({
   title,
@@ -838,6 +875,19 @@ const styles = StyleSheet.create({
   garmentCategory: { ...type.bodyMedium, color: colors.text },
   garmentMeta: { ...type.meta, color: colors.textMuted, marginLeft: space.sm },
   garmentNote: { ...type.body, color: colors.text, marginTop: space.sm },
+
+  shopSimilar: { marginVertical: space.lg },
+  shopRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: space.md,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+  },
+  shopRowPressed: { opacity: 0.6 },
+  shopLabel: { ...type.body, color: colors.text },
+  shopDisclosure: { ...type.meta, color: colors.textMuted, marginTop: space.sm },
 
   footnote: { ...type.meta, color: colors.textMuted },
   cta: { marginTop: space.lg, marginBottom: space.sm },

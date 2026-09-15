@@ -15,6 +15,40 @@ docs/       Deployment, prompt contract, spec deviations
 
 ---
 
+## ⚠️ Outstanding TODO — swap in real Amazon PA-API for "Shop similar"
+
+**Status:** `armygymnast0f-20` (the only Amazon Associates account we have)
+is not yet eligible for the Creators API / PA-API. Confirmed live against
+Amazon's own endpoints on 2026-09-14: the OAuth token endpoint issues a
+token fine, but `POST https://creatorsapi.amazon/catalog/v1/searchItems`
+returns `403 AssociateNotEligible` — "Your account does not currently meet
+the eligibility requirements." Per Amazon's Creators API FAQ this requires
+10 qualifying sales in a trailing 30-day window.
+
+**What's shipped instead, for now:** `mobile/src/amazon.ts` builds a plain
+tagged Amazon search URL (`amazon.com/s?k=...&tag=armygymnast0f-20`) from
+the detected garment's own category/colour/pattern — no product photos,
+prices, or real Amazon catalog data. Wired into ResultScreen's "Shop
+similar" section. Full details in `docs/spec-deviations.md` §40.
+
+**Do not forget:** once `armygymnast0f-20` clears Amazon's eligibility bar,
+replace the plain search-link logic in `amazon.ts` with a real PA-API
+`searchItems` call (real product cards — photo/price/title). Re-test
+eligibility any time with:
+
+```bash
+curl -s -X POST https://api.amazon.com/auth/o2/token \
+  -H "Content-Type: application/json" \
+  -d '{"grant_type":"client_credentials","client_id":"<credential id>","client_secret":"<secret>","scope":"creatorsapi::default"}'
+```
+
+then use the returned `access_token` as a Bearer token against
+`POST https://creatorsapi.amazon/catalog/v1/searchItems` — a `403
+AssociateNotEligible` means still blocked; anything else means it's time to
+build the real integration.
+
+---
+
 ## Quickstart
 
 Two terminals. The backend runs with **no Postgres, no Redis and no S3** — see

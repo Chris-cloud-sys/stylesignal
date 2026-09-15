@@ -1492,3 +1492,57 @@ confirmed one — there was no hard evidence (no exception, no log) to
 diagnose this one the way the crash-class bugs elsewhere in this log
 were diagnosed, only the reasoning above and the pattern from the two
 prior rounds.
+
+## 40. "Shop similar" — Amazon affiliate link-out, without PA-API (for now)
+
+Confirmed scope: a "Shop similar" section on every completed read,
+searching Amazon for whatever garments were detected (using the
+existing `garments[]` category/colour/pattern fields — no new backend
+work needed), tag `armygymnast0f-20`, marketplace `amazon.com` (US).
+Tapping a result opens Amazon (app if installed, else browser) to buy —
+a standard affiliate link-out, not a checkout built into StyleSignal.
+
+Before writing any of this, tested the real Amazon Creators API
+end-to-end (2026-09-14) rather than assuming credential format from
+memory — worth recording because the assistant's first-pass assumption
+here was wrong and directly contradicted by live evidence. Amazon has
+replaced PA-API v5's AWS-SigV4 auth with OAuth2 client-credentials for
+new ("v3.1") credentials: `POST https://api.amazon.com/auth/o2/token`
+with `{grant_type: "client_credentials", client_id, client_secret,
+scope: "creatorsapi::default"}` returns a bearer token; that token goes
+on `POST https://creatorsapi.amazon/catalog/v1/searchItems` (note:
+lowerCamelCase fields — `offersV2.listings.price`, not PA-API v5's
+`offers.listings.price`; the API told us this directly via a
+`FieldValidationFailed` error on the first real attempt, which is also
+how the correct field name was found — read the error, don't guess a
+second time either).
+
+The token step succeeded for every credential pair tried. `searchItems`
+did not: every one of the account's existing app credentials returned
+`403 AssociateNotEligible` — "Your account does not currently meet the
+eligibility requirements." Per the Creators API FAQ this needs 10
+qualifying sales in a trailing 30-day window. Some confusion along the
+way was itself informative: the user initially believed "ARMYGYMNASTICS"
+was a separate, older Associates account with real sales history, but
+both apps shown (`armygymnast0f-20.armygymnastics` and
+`armygymnast0f-20.stylesignal`) share the `armygymnast0f-20` prefix —
+that prefix is the owning Associates account, and "ARMYGYMNASTICS" was
+only this app's display name. Three live tests (two app credentials,
+two tag spellings) all hit the same ineligible account; there is no
+second, eligible account to fall back to. `armygymnast0f-20` was created
+the day before this was tested, so this reads as "too new," not broken.
+
+Given that, shipping real PA-API product cards (photos/prices/titles)
+isn't possible yet — not a code problem, an Amazon account-standing
+problem that only clears with real purchase volume over time. Shipped
+instead: `mobile/src/amazon.ts` builds a plain tagged Amazon search URL
+(`amazon.com/s?k=<keywords>&tag=armygymnast0f-20`) from the garment's
+own category, dominant colour (nearest-name match against a small fixed
+palette — the backend only stores hex, no colour name), and pattern
+(when not `solid`/`other`) — e.g. a navy solid outerwear garment becomes
+"Navy jacket". No Amazon API call, no credentials, no backend change at
+all; entirely client-side, opens via `Linking`. Flagged with a pinned
+TODO at the top of the repo root's `README.md` (previously nonexistent —
+created for this) so the plain-search version gets swapped for a real
+`searchItems`-backed one the moment `armygymnast0f-20` clears
+eligibility; the exact re-test command is there too.

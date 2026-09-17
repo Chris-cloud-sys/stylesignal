@@ -15,6 +15,12 @@ import { Image, StyleSheet, Text, View } from 'react-native';
 import type { Feedback } from '../api/types';
 import { sentenceCase } from '../theme';
 
+// The real logo, not the app's own Logo.tsx (which picks light/dark by the
+// app's current theme) — this card is a fixed dark treatment regardless of
+// app theme (see the module header), so it always wants the dark variant.
+const LOGO_DARK = require('../../assets/logo-dark.png');
+const LOGO_ASPECT_RATIO = 1379 / 271;
+
 /** SPEC+ (docs/spec-deviations.md) — 'story' (9:16, Instagram/Snapchat
  * Stories) and 'square' (1:1, feed posts) are the two shapes that actually
  * match where people share to, replacing the single fixed ~4:5 card. Same
@@ -43,16 +49,10 @@ interface Props {
   occasion?: string | null;
   feedback: Feedback;
   format?: ShareCardFormat;
-  /** SPEC+ (docs/spec-deviations.md) — lets a caller that mounts this
-   * off-screen specifically to capture it (ShareOutfitAction) know the
-   * card has actually had a layout pass, rather than guessing with a
-   * timeout. ResultScreen's own always-mounted card doesn't need this —
-   * it's already laid out by the time Share is ever tapped. */
-  onLayout?: () => void;
 }
 
 export const ShareCard = React.forwardRef<View, Props>(function ShareCard(
-  { photoUri, occasion, feedback, format = 'story', onLayout },
+  { photoUri, occasion, feedback, format = 'story' },
   ref,
 ): React.ReactElement {
   const meters: Array<['occasion_match' | 'signal_clarity', 'strong' | 'partial' | 'off']> = [];
@@ -65,7 +65,6 @@ export const ShareCard = React.forwardRef<View, Props>(function ShareCard(
     <View
       ref={ref}
       collapsable={false}
-      onLayout={onLayout}
       style={[styles.card, { height: FORMAT_HEIGHT[format] }]}
     >
       {photoUri ? (
@@ -74,10 +73,12 @@ export const ShareCard = React.forwardRef<View, Props>(function ShareCard(
         <View style={[styles.photo, styles.photoPlaceholder]} />
       )}
 
-      <View style={styles.wordmarkRow}>
-        <View style={styles.wordmarkDot} />
-        <Text style={styles.wordmark}>StyleSignal</Text>
-      </View>
+      <Image
+        source={LOGO_DARK}
+        style={styles.wordmarkImage}
+        resizeMode="contain"
+        accessibilityLabel="StyleSignal"
+      />
 
       <View style={styles.scrim}>
         {occasion ? <Text style={styles.occasion}>Read for {sentenceCase(occasion)}</Text> : null}
@@ -126,16 +127,13 @@ const styles = StyleSheet.create({
   photo: { ...StyleSheet.absoluteFillObject, width: undefined, height: undefined },
   photoPlaceholder: { backgroundColor: '#181E29' },
 
-  wordmarkRow: {
+  wordmarkImage: {
     position: 'absolute',
     top: 20,
     left: 20,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
+    height: 16,
+    width: 16 * LOGO_ASPECT_RATIO,
   },
-  wordmarkDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: '#38BDF8' },
-  wordmark: { fontSize: 13, fontWeight: '500', color: '#E4E4E7', letterSpacing: 0.3 },
 
   scrim: {
     position: 'absolute',

@@ -1894,3 +1894,31 @@ to that theme's `text` — `#00A3E0`/`#1A1A1A` for light, `#38BDF8`/
 `#E4E4E7` for dark — so both variants are now the same mark, exactly
 theme-token-accurate, differing only in colour the way a real light/dark
 logo pair should.
+
+## 45. The real logo on ShareCard, and the "Share just spins" bug from entry #44
+
+**ShareCard's wordmark was a hand-drawn placeholder** (a small coloured
+`View` dot + `Text`, hardcoded hex), predating entry #44's real logo
+asset entirely. Swapped for the actual logo image — specifically the
+dark variant directly (`require('../../assets/logo-dark.png')`), not
+the app's own `components/Logo.tsx`, since that picks light/dark by the
+*app's* current theme and this card is a fixed dark treatment
+regardless of it (see the file's own module header).
+
+**The Community/Favorites Share bug — busy spinner forever, no share
+sheet.** Root cause: entry #44's new `ShareOutfitAction` drove its
+capture off `ShareCard`'s `onLayout` firing, a mechanism nothing else
+in this codebase relies on — and its off-screen container positioned
+the card at `top: -9999, left: -9999`, unlike `ResultScreen`'s own
+(working) share, which uses `top: 0, left: -2000` and never depends on
+`onLayout` at all (its card is always mounted, already laid out by the
+time Share is tapped). Plausible mechanism: Android may simply not
+bother computing layout for a view pushed that far outside any
+viewport, so `onLayout` never fired, `busy` never cleared. Fixed by
+dropping the `onLayout` dependency entirely — reverted the `ShareCard`
+prop addition — in favour of the same "wait a tick, then act" shape
+`BrowseFeed`'s `onScrollToIndexFailed` retry already uses elsewhere in
+this app, and the same proven off-screen position `ResultScreen` uses.
+Same lesson as entry #43's `keyboardShouldPersistTaps` fix: prefer a
+pattern already proven to work in this codebase over a new one that
+looks reasonable but hasn't been tested here.

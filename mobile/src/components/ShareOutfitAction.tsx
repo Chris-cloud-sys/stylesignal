@@ -12,7 +12,7 @@
  * wasted work for the overwhelming majority never tapped.
  */
 import { Ionicons } from '@expo/vector-icons';
-import React, { useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
 
 import { fetchOutfit } from '../api/client';
@@ -60,6 +60,27 @@ export function ShareOutfitAction({
     }
   };
 
+  // SPEC+ (docs/spec-deviations.md) — the first version of this drove the
+  // capture off ShareCard's onLayout, a mechanism nothing else in this app
+  // relies on, and it never fired reliably here (this component's offscreen
+  // container pushed the card to -9999/-9999, unlike ResultScreen's proven
+  // top:0/left:-2000 — plausibly too far off-screen for Android to bother
+  // laying out at all), leaving `busy` stuck true forever: the reported
+  // "spins and nothing happens" bug. Switched to the same "wait a tick,
+  // then act" shape BrowseFeed's onScrollToIndexFailed retry already uses
+  // elsewhere in this codebase, and the same offscreen position
+  // ResultScreen's own (working) share already uses.
+  useEffect(() => {
+    if (!feedback) return;
+    const id = setTimeout(() => {
+      void shareFeedbackImage(cardRef, feedback).finally(() => {
+        setBusy(false);
+        setFeedback(null);
+      });
+    }, 100);
+    return () => clearTimeout(id);
+  }, [feedback]);
+
   return (
     <>
       <Pressable
@@ -83,16 +104,6 @@ export function ShareOutfitAction({
             occasion={occasion}
             feedback={feedback}
             format="story"
-            onLayout={() => {
-              // Capture only after the card has actually laid out — a ref
-              // populated on mount but not yet rendered/measured captures
-              // blank. See BrowseFeed's onScrollToIndexFailed for the same
-              // "wait for a real layout pass" shape elsewhere in this app.
-              void shareFeedbackImage(cardRef, feedback).finally(() => {
-                setBusy(false);
-                setFeedback(null);
-              });
-            }}
           />
         </View>
       ) : null}
@@ -101,5 +112,5 @@ export function ShareOutfitAction({
 }
 
 const styles = StyleSheet.create({
-  offscreen: { position: 'absolute', top: -9999, left: -9999 },
+  offscreen: { position: 'absolute', top: 0, left: -2000 },
 });

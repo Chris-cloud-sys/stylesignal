@@ -15,7 +15,7 @@
  */
 import { Ionicons } from '@expo/vector-icons';
 import React, { useEffect, useRef, useState } from 'react';
-import { FlatList, Image, Pressable, Share, StyleSheet, Text, View } from 'react-native';
+import { FlatList, Image, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import {
   absoluteMediaUrl,
@@ -30,6 +30,7 @@ import {
 import type { OutfitListItem } from '../api/types';
 import { CommentSheet } from './CommentSheet';
 import { Avatar } from './primitives';
+import { ShareOutfitAction } from './ShareOutfitAction';
 import { colors, radius, sentenceCase, space, type, weight } from '../theme';
 
 interface Props {
@@ -166,17 +167,6 @@ function BrowseCard({
     }
   };
 
-  const share = (): void => {
-    const occasionPhrase = item.occasion ? ` for ${sentenceCase(item.occasion)}` : '';
-    Share.share({
-      message: item.verdict_phrase
-        ? `"${item.verdict_phrase}" — a read${occasionPhrase} on StyleSignal.`
-        : `A read${occasionPhrase} on StyleSignal.`,
-    }).catch(() => {
-      // Share sheet dismissed or unavailable — nothing to recover.
-    });
-  };
-
   return (
     <View style={styles.card}>
       <View style={styles.imageWrap}>
@@ -253,14 +243,12 @@ function BrowseCard({
             />
           </Pressable>
 
-          <Pressable
-            onPress={share}
+          <ShareOutfitAction
+            outfitId={item.outfit_id}
+            occasion={item.occasion}
+            thumbUri={thumb}
             style={styles.railAction}
-            accessibilityRole="button"
-            accessibilityLabel="Share this read"
-          >
-            <Ionicons name="arrow-redo-outline" size={24} color={colors.onPhoto} />
-          </Pressable>
+          />
         </View>
       </View>
 

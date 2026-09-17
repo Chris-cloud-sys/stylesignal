@@ -29,6 +29,7 @@ import {
 
 import { ApiError, uploadOutfit } from '../api/client';
 import type { Quota } from '../api/types';
+import { Logo } from '../components/Logo';
 import { Button, Chip, SectionLabel } from '../components/primitives';
 import {
   CAPTURE_MODES,
@@ -172,7 +173,7 @@ export function CaptureScreen({
         keyboardShouldPersistTaps="handled"
       >
         <View style={styles.header}>
-          <Text style={styles.wordmark}>StyleSignal</Text>
+          <Logo height={26} />
         </View>
 
         {quota ? <QuotaLine quota={quota} onOpenUpgrade={onOpenUpgrade} /> : null}
@@ -344,7 +345,6 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     marginBottom: space.xs,
   },
-  wordmark: { ...type.title, color: colors.text },
   quota: { ...type.meta, color: colors.textMuted, marginBottom: space.lg },
   // §7.9 "scans-left is a subtle pill and an upgrade moment".
   quotaPill: {

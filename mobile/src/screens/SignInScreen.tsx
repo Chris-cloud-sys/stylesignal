@@ -10,6 +10,7 @@ import {
 } from 'react-native';
 
 import { ApiError, login, register } from '../api/client';
+import { Logo } from '../components/Logo';
 import { Button, PasswordField } from '../components/primitives';
 import { colors, space, type } from '../theme';
 
@@ -18,14 +19,22 @@ interface Props {
    * picture" prompt only right after account creation, never on a login. */
   onSignedIn: (justRegistered: boolean) => void;
   onForgotPassword: () => void;
+  /** SPEC+ — referral deep link (docs/spec-deviations.md). Set when the
+   * app was opened via a stylesignal://join?ref=CODE link — pre-fills the
+   * code and jumps straight to the create-account form. */
+  initialReferralCode?: string | null;
 }
 
-export function SignInScreen({ onSignedIn, onForgotPassword }: Props): React.ReactElement {
-  const [mode, setMode] = useState<'signIn' | 'create'>('signIn');
+export function SignInScreen({
+  onSignedIn,
+  onForgotPassword,
+  initialReferralCode,
+}: Props): React.ReactElement {
+  const [mode, setMode] = useState<'signIn' | 'create'>(initialReferralCode ? 'create' : 'signIn');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [displayName, setDisplayName] = useState('');
-  const [referralCode, setReferralCode] = useState('');
+  const [referralCode, setReferralCode] = useState(initialReferralCode ?? '');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -58,7 +67,7 @@ export function SignInScreen({ onSignedIn, onForgotPassword }: Props): React.Rea
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
       <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
-        <Text style={styles.wordmark}>StyleSignal</Text>
+        <Logo height={32} style={styles.wordmark} />
         <Text style={styles.pitch}>
           Photograph an outfit and get an honest read on how it comes across —
           the colours, the register, the line. It describes; you decide.
@@ -153,7 +162,7 @@ const styles = StyleSheet.create({
     flexGrow: 1,
     justifyContent: 'center',
   },
-  wordmark: { ...type.display, color: colors.text, marginBottom: space.sm },
+  wordmark: { marginBottom: space.sm },
   pitch: {
     ...type.body,
     color: colors.textMuted,

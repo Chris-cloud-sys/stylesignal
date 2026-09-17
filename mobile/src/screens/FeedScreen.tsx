@@ -16,7 +16,6 @@ import {
   FlatList,
   Image,
   Pressable,
-  Share,
   StyleSheet,
   Text,
   View,
@@ -35,6 +34,7 @@ import {
 } from '../api/client';
 import { CommentSheet } from '../components/CommentSheet';
 import { Avatar, Button } from '../components/primitives';
+import { ShareOutfitAction } from '../components/ShareOutfitAction';
 import type { FeedItem, RatingDimension } from '../api/types';
 import { colors, radius, sentenceCase, space, type, weight } from '../theme';
 
@@ -303,15 +303,6 @@ function FeedCard({
     }
   };
 
-  const share = (): void => {
-    const occasionPhrase = item.occasion ? ` for ${sentenceCase(item.occasion)}` : '';
-    Share.share({
-      message: `${item.owner_display_name} shared a read${occasionPhrase} on StyleSignal.`,
-    }).catch(() => {
-      // Share sheet dismissed or unavailable — nothing to recover.
-    });
-  };
-
   const submit = async (): Promise<void> => {
     if (!hasAnyValue || submitting) return;
     setSubmitting(true);
@@ -403,14 +394,12 @@ function FeedCard({
             />
           </Pressable>
 
-          <Pressable
-            onPress={share}
+          <ShareOutfitAction
+            outfitId={item.outfit_id}
+            occasion={item.occasion}
+            thumbUri={thumb}
             style={styles.railAction}
-            accessibilityRole="button"
-            accessibilityLabel="Share this read"
-          >
-            <Ionicons name="arrow-redo-outline" size={24} color={colors.onPhoto} />
-          </Pressable>
+          />
         </View>
       </View>
 

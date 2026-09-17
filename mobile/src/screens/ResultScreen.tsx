@@ -6,11 +6,8 @@
  * the feedback is language, not a grade.
  */
 import { Ionicons } from '@expo/vector-icons';
-import { File, Paths } from 'expo-file-system';
-import * as Sharing from 'expo-sharing';
 import React, { useRef, useState } from 'react';
-import { ActivityIndicator, Alert, Image, Linking, Pressable, ScrollView, Share, StyleSheet, Text, View } from 'react-native';
-import { captureRef } from 'react-native-view-shot';
+import { ActivityIndicator, Alert, Image, Linking, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import {
   absoluteMediaUrl,
@@ -47,6 +44,7 @@ import {
 import { CommentSheet } from '../components/CommentSheet';
 import { ShareCard, type ShareCardFormat } from '../components/ShareCard';
 import { OCCASIONS, type Occasion } from '../config';
+import { shareFeedbackImage } from '../share';
 import { colors, radius, sentenceCase, space, type, weight } from '../theme';
 
 /** §7.7 meter labels — plain English, not the wire-format field name. */
@@ -475,65 +473,6 @@ function ChangeOccasion({
       />
     </View>
   );
-}
-
-// --- Share ("Share this read") ----------------------------------------------
-// Captures the off-screen ShareCard (see components/ShareCard.tsx) to a PNG
-// and hands it to the native share sheet. Needs a dev client build —
-// react-native-view-shot isn't in Expo Go's managed SDK (see
-// docs/spec-deviations.md #14). Falls back to a text-only share if the
-// image capture or the share sheet itself is unavailable, so this degrades
-// gracefully rather than dead-ending.
-function buildShareText(feedback: Feedback): string {
-  const lines = [feedback.verdict_phrase];
-  if (feedback.verdict_subtitle) lines.push(feedback.verdict_subtitle);
-  if (feedback.quick_reads.length > 0) {
-    lines.push('');
-    for (const item of feedback.quick_reads) {
-      lines.push(`${sentenceCase(item.dimension)}: ${item.text}`);
-    }
-  }
-  lines.push('');
-  // "Try it now" phase 1 — same brand-only line as ShareCard's watermark,
-  // no domain/store link until phase 2 has one to point at.
-  lines.push('Get your own read — StyleSignal');
-  return lines.join('\n');
-}
-
-function shareFeedbackText(feedback: Feedback): void {
-  Share.share({ message: buildShareText(feedback) }).catch(() => {
-    // User cancelled or the share sheet failed to open — nothing to recover.
-  });
-}
-
-async function shareFeedbackImage(
-  cardRef: React.RefObject<View | null>,
-  feedback: Feedback,
-): Promise<void> {
-  try {
-    const canShareFile = await Sharing.isAvailableAsync();
-    if (!canShareFile || !cardRef.current) {
-      shareFeedbackText(feedback);
-      return;
-    }
-    // react-native-view-shot's own tmp directory isn't one expo-sharing's
-    // FileProvider config covers on Android — sharing straight from there
-    // throws a native FileProvider exception that crashes the app instead
-    // of rejecting the promise, so this try/catch never even sees it.
-    // Copying into expo-file-system's cache dir first keeps the file
-    // somewhere Sharing.shareAsync is actually configured to hand off.
-    const capturedUri = await captureRef(cardRef, { format: 'png', quality: 1 });
-    const shareableFile = new File(Paths.cache, `stylesignal-share-${Date.now()}.png`);
-    new File(capturedUri).copy(shareableFile);
-    await Sharing.shareAsync(shareableFile.uri, {
-      mimeType: 'image/png',
-      dialogTitle: 'Share this read',
-    });
-  } catch {
-    // Capture or the share sheet failed (or the user cancelled) — text still
-    // gets the read across.
-    shareFeedbackText(feedback);
-  }
 }
 
 // --- Zone 1: headline (§7.7) -------------------------------------------------

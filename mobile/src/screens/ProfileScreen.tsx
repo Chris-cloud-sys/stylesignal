@@ -313,11 +313,18 @@ export function ProfileScreen({
 }
 
 function shareReferralCode(code: string): void {
+  // SPEC+ — referral deep link (docs/spec-deviations.md). Only opens
+  // straight to a pre-filled signup for someone who already has the app
+  // installed (App.tsx's Linking handler); StyleSignal isn't in the Play
+  // Store yet, so this can't yet do the "tap it, install, land signed up"
+  // flow for someone brand new — the code is still spelled out in the
+  // message itself so it's usable either way.
+  const link = `stylesignal://join?ref=${encodeURIComponent(code)}`;
   Share.share({
     message:
       `Come read your outfits on StyleSignal — no scores, just an honest ` +
       `description of how a look comes across. Use my code ${code} when you ` +
-      `sign up and we each get 2 bonus scans.`,
+      `sign up and we each get 2 bonus scans: ${link}`,
   }).catch(() => {
     // User cancelled or the share sheet failed to open — nothing to recover.
   });

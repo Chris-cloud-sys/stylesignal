@@ -1782,3 +1782,100 @@ for good measure (comment-liking/reply taps while the keyboard is open
 were exposed to the same class of bug even though it wasn't reported
 there yet). Diagnostic `console.log` calls from entry #42 removed now
 that the sheet has a real, on-device-confirmed success case logged.
+
+## 44. Logo, real image shares everywhere, a referral deep link, hardware back, and ownership-gated Read
+
+Seven requests from one round, each independently scoped; understanding
+was confirmed item-by-item with Chris (including two real corrections —
+see below) before any of it was built.
+
+**1. Logo instead of the text wordmark.** No logo asset existed
+anywhere in this repo — checked `mobile/assets/` (didn't exist) and
+`app.json`'s icon/splash config (background colour only, no image)
+before assuming otherwise. Chris pointed at
+`C:\Users\Chris\OneDrive\Desktop\StyleSignal\Logos`, which held eight
+different logo concepts, not one. Picked two — "Minimal Logo with Icon"
+for light mode, "Refined Logo with Radar Icon" for dark mode — and
+processed both with Pillow into `mobile/assets/logo-{light,dark}.png`:
+transparent background, cropped tight. The dark-mode source needed real
+correction, not just cropping — its wordmark looked light-blue in the
+thumbnail preview but a pixel histogram showed it was actually pure
+black on navy (`(0,0,0)` on `(43,52,59)`, confirmed by counting the
+actual pixel values rather than trusting the rendered thumbnail a
+second time), which would have produced illegible black-on-black text
+once composited over the app's own dark background. Recoloured
+programmatically instead: navy → transparent, the icon (left ~22% of
+the content by x-position) → the dark-theme accent `#38BDF8`, the rest
+→ the dark-theme text colour `#E4E4E7`. New `components/Logo.tsx` picks
+the asset from `isDarkMode` (resolved once at launch, same as every
+other theme value — see theme.ts) — no live-switching logic needed, a
+theme change already reloads the JS engine. Wired into the two places
+the text wordmark appeared: Home (`CaptureScreen`) and Sign-in.
+
+**2 & 3. Share should carry an image, not just text.** Audited every
+`Share.share(...)` call site rather than assuming — `ResultScreen`'s own
+Share already did this correctly (captures the branded `ShareCard` to a
+PNG, entry #41). The bug was specifically the Community feed's and
+Browse's rail Share buttons, both bare text shares — that's where "Mike
+shared a read for the evening on StyleSignal" with no photo came from.
+Fixed by extracting `ResultScreen`'s capture/share logic into a shared
+`src/share.ts` (no behaviour change there, just relocated) and building
+`components/ShareOutfitAction.tsx`: on tap, fetches the outfit's full
+detail (a feed/browse card only carries a `verdict_phrase`, not the full
+palette/meters `ShareCard` needs — fetching that for every card up front
+"just in case" would be wasted work for the overwhelming majority never
+shared), mounts an off-screen `ShareCard` with the real data, and
+captures it once it's actually laid out. That last part needed a small
+`ShareCard` addition — an `onLayout` prop — since `ResultScreen`'s own
+card is always-mounted (already laid out by the time Share is tapped)
+and never needed one.
+
+**4. A referral link that pre-fills the code.** Real constraint
+surfaced before building anything: StyleSignal isn't on the Play Store
+yet (the pinned to-do from `project_stylesignal` memory). A link that
+"opens account creation and inserts the code" for someone who doesn't
+have the app needs a store listing to send them to, or a deferred-
+deep-linking service — neither exists. Scoped down to what's real:
+`stylesignal://join?ref=CODE` (the scheme was already registered in
+`app.json`), parsed manually in `App.tsx` via `Linking.getInitialURL`/
+`addEventListener('url', ...)` rather than pulling in `expo-linking` for
+one query parameter — hands the code to `SignInScreen` as
+`initialReferralCode`, which pre-fills the field and jumps straight to
+the create-account form. This only works for someone who already has
+the app installed; the invite message still spells out the code in
+plain text too, so it's usable either way. The "opens store, installs,
+lands signed up" flow for a brand-new user stays blocked on the Play
+Store listing — Android's Play Install Referrer API is the standard
+way to do that once the listing exists, not a new service to build.
+
+**5. Hardware/gesture back instead of reaching for a top button.**
+Confirmed a real gap before writing anything: zero `BackHandler` usage
+anywhere in this app. Every "Back"/"Home" link (Insights, Wardrobe, a
+member's profile, Browse, ResultScreen's "Home") was on-screen-only —
+Android's hardware/gesture back did nothing on any of them. Fixed with
+one centralized `BackHandler` in `App.tsx` (not a listener duplicated
+in every leaf screen) that switches on `screen.name` and calls the same
+navigation the on-screen link already does; tab screens deliberately
+return `false` (unhandled) so Android's own default (minimize/exit)
+still applies there, matching what users already expect on a root
+screen. iOS has no hardware back button, so the on-screen links stay —
+this is additive, not a replacement.
+
+**6 & 7. "Read" is for the outfit's own uploader, not whoever's
+looking.** Chris's own framing, and a real, coherent rule once stated:
+the full detailed Read screen should only ever be reachable by the
+person who uploaded that outfit — a Community rating queue view or
+someone else's profile grid never opens it, because you didn't publish
+it. That's a stricter, better rule than what shipped in entry #42's
+first pass (a manual Read/Browse toggle on every grid) and Chris caught
+it directly: on a *member's profile* grid, removed the toggle entirely
+— every tap opens Browse, except when `profile.is_self` (viewing your
+*own* public profile, where every outfit listed genuinely is yours).
+*Favorites* needed the finer-grained version, not "always Browse": a
+favorited outfit can be someone else's public read (favoriting was
+never restricted to your own) or your own — so each item now checks
+`item.owner_id === viewerId` (the viewer's own id fetched once via
+`fetchMe()`) and opens Read only for the ones you actually uploaded,
+Browse for everything else, no toggle. *History* deliberately keeps its
+toggle unchanged — explicit call from Chris, and consistent with the
+rule anyway, since every History item is already the viewer's own.

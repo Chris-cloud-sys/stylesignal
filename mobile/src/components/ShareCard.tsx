@@ -43,10 +43,16 @@ interface Props {
   occasion?: string | null;
   feedback: Feedback;
   format?: ShareCardFormat;
+  /** SPEC+ (docs/spec-deviations.md) — lets a caller that mounts this
+   * off-screen specifically to capture it (ShareOutfitAction) know the
+   * card has actually had a layout pass, rather than guessing with a
+   * timeout. ResultScreen's own always-mounted card doesn't need this —
+   * it's already laid out by the time Share is ever tapped. */
+  onLayout?: () => void;
 }
 
 export const ShareCard = React.forwardRef<View, Props>(function ShareCard(
-  { photoUri, occasion, feedback, format = 'story' },
+  { photoUri, occasion, feedback, format = 'story', onLayout },
   ref,
 ): React.ReactElement {
   const meters: Array<['occasion_match' | 'signal_clarity', 'strong' | 'partial' | 'off']> = [];
@@ -59,6 +65,7 @@ export const ShareCard = React.forwardRef<View, Props>(function ShareCard(
     <View
       ref={ref}
       collapsable={false}
+      onLayout={onLayout}
       style={[styles.card, { height: FORMAT_HEIGHT[format] }]}
     >
       {photoUri ? (

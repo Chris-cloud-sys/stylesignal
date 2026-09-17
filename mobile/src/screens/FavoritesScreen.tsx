@@ -6,10 +6,9 @@ import { Ionicons } from '@expo/vector-icons';
 import React, { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
 
-import { absoluteMediaUrl, fetchFavorites, unfavoriteOutfit } from '../api/client';
+import { absoluteMediaUrl, fetchFavorites, fetchMe, unfavoriteOutfit } from '../api/client';
 import type { OutfitListItem } from '../api/types';
 import { GridStatusBadge, PhotoGrid } from '../components/PhotoGrid';
-import { type GridMode, ReadBrowseToggle } from '../components/ReadBrowseToggle';
 import { colors, space, type } from '../theme';
 
 interface Props {
@@ -26,7 +25,7 @@ export function FavoritesScreen({ onOpen, onBrowse }: Props): React.ReactElement
   const [error, setError] = useState<string | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const selecting = selected.size > 0;
-  const [mode, setMode] = useState<GridMode>('read');
+  const [viewerId, setViewerId] = useState<string | null>(null);
 
   const load = useCallback(async (nextCursor?: string | null): Promise<void> => {
     try {
@@ -48,6 +47,12 @@ export function FavoritesScreen({ onOpen, onBrowse }: Props): React.ReactElement
     void load();
   }, [load]);
 
+  useEffect(() => {
+    fetchMe()
+      .then((me) => setViewerId(me.user.id))
+      .catch(() => undefined);
+  }, []);
+
   const toggleSelect = (outfitId: string): void => {
     setSelected((existing) => {
       const next = new Set(existing);
@@ -60,10 +65,16 @@ export function FavoritesScreen({ onOpen, onBrowse }: Props): React.ReactElement
     });
   };
 
-  // SPEC+ — genuinely browsable Favorites (docs/spec-deviations.md #42,
-  // round 2). Same persistent toggle as History — see its comment.
+  // SPEC+ — ownership-gated Read (docs/spec-deviations.md #44). Favorites
+  // can hold someone else's public outfit (favoriting isn't restricted to
+  // your own), so unlike History this isn't uniformly one or the other —
+  // an item you uploaded yourself still opens the full Read; one you
+  // favorited from someone else opens Browse, same rule as a member's
+  // profile grid. A non-"complete" item (shouldn't normally appear here,
+  // but not guaranteed) always falls back to Read regardless.
   const openItem = (item: OutfitListItem): void => {
-    if (mode === 'browse' && item.status === 'complete') {
+    const isOwn = viewerId != null && item.owner_id === viewerId;
+    if (item.status === 'complete' && !isOwn) {
       onBrowse(items, items.findIndex((i) => i.outfit_id === item.outfit_id));
     } else {
       onOpen(item.outfit_id);
@@ -111,8 +122,6 @@ export function FavoritesScreen({ onOpen, onBrowse }: Props): React.ReactElement
           <Text style={styles.title}>Favorites</Text>
         )}
       </View>
-
-      {!selecting ? <ReadBrowseToggle mode={mode} onChange={setMode} /> : null}
 
       {error ? <Text style={styles.error}>{error}</Text> : null}
 

@@ -9,7 +9,6 @@ import { absoluteMediaUrl, fetchUserProfile, followUser, unfollowUser } from '..
 import type { OutfitListItem, UserProfile } from '../api/types';
 import { Avatar, Button } from '../components/primitives';
 import { PhotoGrid } from '../components/PhotoGrid';
-import { type GridMode, ReadBrowseToggle } from '../components/ReadBrowseToggle';
 import { colors, space, type } from '../theme';
 
 interface Props {
@@ -33,7 +32,6 @@ export function UserProfileScreen({
   const [loadingMore, setLoadingMore] = useState(false);
   const [followBusy, setFollowBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [mode, setMode] = useState<GridMode>('read');
 
   const load = useCallback(async (): Promise<void> => {
     try {
@@ -96,16 +94,18 @@ export function UserProfileScreen({
     }
   };
 
-  // SPEC+ — genuinely browsable profile grid (docs/spec-deviations.md #42,
-  // round 2). Same persistent toggle as History/Favorites — see History's
-  // comment. Every outfit a profile lists is already "complete"
-  // (get_user_profile only ever returns completed public outfits), so no
-  // status check is needed before honoring Browse mode here.
+  // SPEC+ — ownership-gated Read (docs/spec-deviations.md #44). "Read" —
+  // the full detailed result screen — is only ever available to the
+  // outfit's own uploader; anyone visiting isn't the one who published
+  // it, so every tap opens Browse instead, no toggle, nothing to choose.
+  // The one exception is your own profile, viewed via Profile → "View
+  // public profile": every outfit listed there is yours, so Read stays
+  // available — profile.is_self is exactly that distinction.
   const openItem = (item: OutfitListItem): void => {
-    if (mode === 'browse') {
-      onBrowse(items, items.findIndex((i) => i.outfit_id === item.outfit_id));
-    } else {
+    if (profile?.is_self) {
       onOpenOutfit(item.outfit_id);
+    } else {
+      onBrowse(items, items.findIndex((i) => i.outfit_id === item.outfit_id));
     }
   };
 
@@ -141,29 +141,26 @@ export function UserProfileScreen({
         onEndReached={() => void loadMore()}
         ListHeaderComponent={
           profile ? (
-            <>
-              <View style={styles.profileHead}>
-                <View style={styles.profileHeadRow}>
-                  <Avatar name={profile.display_name} uri={profile.avatar_url} size={56} />
-                  <Text style={styles.title}>{profile.display_name}</Text>
-                </View>
-                <View style={styles.statsRow}>
-                  <Stat label="Reads" value={profile.outfit_count} />
-                  <Stat label="Followers" value={profile.follower_count} />
-                  <Stat label="Following" value={profile.following_count} />
-                </View>
-                {!profile.is_self ? (
-                  <Button
-                    variant={profile.is_following ? 'secondary' : 'primary'}
-                    label={profile.is_following ? 'Following' : 'Follow'}
-                    onPress={() => void toggleFollow()}
-                    busy={followBusy}
-                    style={styles.followButton}
-                  />
-                ) : null}
+            <View style={styles.profileHead}>
+              <View style={styles.profileHeadRow}>
+                <Avatar name={profile.display_name} uri={profile.avatar_url} size={56} />
+                <Text style={styles.title}>{profile.display_name}</Text>
               </View>
-              <ReadBrowseToggle mode={mode} onChange={setMode} style={styles.browseToggle} />
-            </>
+              <View style={styles.statsRow}>
+                <Stat label="Reads" value={profile.outfit_count} />
+                <Stat label="Followers" value={profile.follower_count} />
+                <Stat label="Following" value={profile.following_count} />
+              </View>
+              {!profile.is_self ? (
+                <Button
+                  variant={profile.is_following ? 'secondary' : 'primary'}
+                  label={profile.is_following ? 'Following' : 'Follow'}
+                  onPress={() => void toggleFollow()}
+                  busy={followBusy}
+                  style={styles.followButton}
+                />
+              ) : null}
+            </View>
           ) : undefined
         }
       />
@@ -206,9 +203,6 @@ const styles = StyleSheet.create({
   statValue: { ...type.bodyMedium, color: colors.text },
   statLabel: { ...type.meta, color: colors.textMuted, marginTop: 2 },
   followButton: { marginTop: space.md, alignSelf: 'flex-start' },
-  // The grid's own contentContainer already pads horizontally
-  // (PhotoGrid's GRID_PADDING) — zero this out rather than double it.
-  browseToggle: { paddingHorizontal: 0 },
   error: {
     ...type.meta,
     color: colors.systemError,

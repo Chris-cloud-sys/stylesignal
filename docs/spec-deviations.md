@@ -1879,3 +1879,18 @@ never restricted to your own) or your own — so each item now checks
 Browse for everything else, no toggle. *History* deliberately keeps its
 toggle unchanged — explicit call from Chris, and consistent with the
 rule anyway, since every History item is already the viewer's own.
+
+**Round 2 correction, same day, on the logo pick.** Chris asked directly
+whether the two picks actually matched well — checking again side by
+side, they didn't: `logo-light.png` and the original `logo-dark.png`
+were two *different* logo concepts (different icon glyph — fanned
+wifi-arcs vs. radar-arcs bleeding into the "S" — and slightly different
+wordmark letterforms), picked each for having the right background to
+crop from rather than for being the same mark. Rebuilt both from the
+single "Minimal Logo with Icon" source instead: one classification pass
+(blue-hue pixels vs. near-neutral-dark pixels, by actual RGB, not
+position) recolours the icon to that theme's `accent` and the wordmark
+to that theme's `text` — `#00A3E0`/`#1A1A1A` for light, `#38BDF8`/
+`#E4E4E7` for dark — so both variants are now the same mark, exactly
+theme-token-accurate, differing only in colour the way a real light/dark
+logo pair should.

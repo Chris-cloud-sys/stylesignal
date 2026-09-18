@@ -188,7 +188,7 @@ def test_avatar_shows_up_on_feed_and_comments(client):
     )
     outfit_id = upload(client, is_public="true")["outfit_id"]
     wait_for_terminal(client, outfit_id)
-    client.post("/v1/outfits/{0}/comments".format(outfit_id), json={"body": "hi"})
+    client.post("/v1/outfits/{0}/comments".format(outfit_id), data={"body": "hi"})
 
     viewer = client.post(
         "/v1/auth/register",
@@ -388,7 +388,7 @@ def test_history_items_carry_verdict_and_comment_count_for_browse(auth_client):
     outfit_id = upload(auth_client)["outfit_id"]
     wait_for_terminal(auth_client, outfit_id)
     auth_client.post(
-        "/v1/outfits/{0}/comments".format(outfit_id), json={"body": "note to self"}
+        "/v1/outfits/{0}/comments".format(outfit_id), data={"body": "note to self"}
     )
     auth_client.post("/v1/outfits/{0}/favorites".format(outfit_id))
 
@@ -474,14 +474,17 @@ def test_delete_soft_deletes_and_hides(auth_client):
     assert outfit_id not in {item["outfit_id"] for item in listed}
 
 
-def test_another_users_outfit_is_a_404_not_a_403(client):
-    """Do not confirm that an id exists to someone who does not own it."""
+def test_another_users_private_outfit_is_a_404_not_a_403(client):
+    """Do not confirm that an id exists to someone who does not own it —
+    still true for a private outfit and always true for a mutation
+    (DELETE stays on the strict owner-only _owned_outfit regardless of
+    is_public — see _owned_or_public_outfit's docstring)."""
     first = client.post(
         "/v1/auth/register",
         json={"email": "owner-{0}@x.com".format(uuid.uuid4().hex[:8]), "password": "a-long-password"},
     ).json()
     client.headers.update({"Authorization": "Bearer " + first["access_token"]})
-    outfit_id = upload(client)["outfit_id"]
+    outfit_id = upload(client, is_public="false")["outfit_id"]
     wait_for_terminal(client, outfit_id)
 
     second = client.post(
@@ -491,6 +494,32 @@ def test_another_users_outfit_is_a_404_not_a_403(client):
     client.headers.update({"Authorization": "Bearer " + second["access_token"]})
 
     assert client.get("/v1/outfits/{0}".format(outfit_id)).status_code == 404
+    assert client.delete("/v1/outfits/{0}".format(outfit_id)).status_code == 404
+
+
+def test_another_users_public_outfit_is_readable_but_not_mutable(client):
+    """SPEC+ — real image shares (docs/spec-deviations.md #46).
+    ShareOutfitAction needs GET /v1/outfits/{id} to work for a public
+    outfit that isn't the caller's own, to build the branded share image
+    from someone else's feed/browse card — but DELETE (and every other
+    mutation) must still 404 for a non-owner regardless of visibility."""
+    first = client.post(
+        "/v1/auth/register",
+        json={"email": "pubowner-{0}@x.com".format(uuid.uuid4().hex[:8]), "password": "a-long-password"},
+    ).json()
+    client.headers.update({"Authorization": "Bearer " + first["access_token"]})
+    outfit_id = upload(client, is_public="true")["outfit_id"]
+    wait_for_terminal(client, outfit_id)
+
+    second = client.post(
+        "/v1/auth/register",
+        json={"email": "viewer-{0}@x.com".format(uuid.uuid4().hex[:8]), "password": "a-long-password"},
+    ).json()
+    client.headers.update({"Authorization": "Bearer " + second["access_token"]})
+
+    detail = client.get("/v1/outfits/{0}".format(outfit_id))
+    assert detail.status_code == 200
+    assert detail.json()["outfit_id"] == outfit_id
     assert client.delete("/v1/outfits/{0}".format(outfit_id)).status_code == 404
 
 
@@ -1006,7 +1035,7 @@ def test_outfit_detail_reports_favorited_and_comment_count_to_owner(auth_client)
     assert fresh["comment_count"] == 0
 
     auth_client.post("/v1/outfits/{0}/favorites".format(outfit_id))
-    auth_client.post("/v1/outfits/{0}/comments".format(outfit_id), json={"body": "note to self"})
+    auth_client.post("/v1/outfits/{0}/comments".format(outfit_id), data={"body": "note to self"})
 
     after = auth_client.get("/v1/outfits/{0}".format(outfit_id)).json()
     assert after["favorited_by_me"] is True
@@ -1053,7 +1082,7 @@ def test_can_add_and_list_comments_on_a_public_outfit(client):
     client.headers.update({"Authorization": "Bearer " + commenter["access_token"]})
 
     posted = client.post(
-        "/v1/outfits/{0}/comments".format(outfit_id), json={"body": "Love this palette."}
+        "/v1/outfits/{0}/comments".format(outfit_id), data={"body": "Love this palette."}
     )
     assert posted.status_code == 201, posted.text
     body = posted.json()
@@ -1065,12 +1094,63 @@ def test_can_add_and_list_comments_on_a_public_outfit(client):
     assert thread["items"][0]["body"] == "Love this palette."
 
 
+def test_comment_with_an_image_attachment(client):
+    """SPEC+ — comment image attachments (docs/spec-deviations.md)."""
+    author = client.post(
+        "/v1/auth/register",
+        json={"email": "cimg-a-{0}@x.com".format(uuid.uuid4().hex[:8]), "password": "a-long-password"},
+    ).json()
+    client.headers.update({"Authorization": "Bearer " + author["access_token"]})
+    outfit_id = upload(client, is_public="true")["outfit_id"]
+    wait_for_terminal(client, outfit_id)
+
+    commenter = client.post(
+        "/v1/auth/register",
+        json={"email": "cimg-b-{0}@x.com".format(uuid.uuid4().hex[:8]), "password": "a-long-password"},
+    ).json()
+    client.headers.update({"Authorization": "Bearer " + commenter["access_token"]})
+
+    posted = client.post(
+        "/v1/outfits/{0}/comments".format(outfit_id),
+        data={"body": "Found something similar!"},
+        files={"image": ("find.jpg", make_jpeg(300, 300), "image/jpeg")},
+    )
+    assert posted.status_code == 201, posted.text
+    assert posted.json()["image_url"]
+
+    thread = client.get("/v1/outfits/{0}/comments".format(outfit_id)).json()
+    assert thread["items"][0]["image_url"]
+
+
+def test_comment_with_only_an_image_and_no_text_is_allowed(auth_client):
+    """A photo on its own is a real comment — only truly empty (no text,
+    no image) should be rejected."""
+    outfit_id = upload(auth_client, is_public="true")["outfit_id"]
+    wait_for_terminal(auth_client, outfit_id)
+    posted = auth_client.post(
+        "/v1/outfits/{0}/comments".format(outfit_id),
+        data={"body": ""},
+        files={"image": ("find.jpg", make_jpeg(300, 300), "image/jpeg")},
+    )
+    assert posted.status_code == 201, posted.text
+    assert posted.json()["image_url"]
+
+
+def test_comment_without_an_image_has_no_image_url(auth_client):
+    outfit_id = upload(auth_client, is_public="true")["outfit_id"]
+    wait_for_terminal(auth_client, outfit_id)
+    posted = auth_client.post(
+        "/v1/outfits/{0}/comments".format(outfit_id), data={"body": "no photo here"}
+    )
+    assert posted.json()["image_url"] is None
+
+
 def test_owner_can_comment_on_their_own_outfit(auth_client):
     outfit_id = upload(auth_client, is_public="true")["outfit_id"]
     wait_for_terminal(auth_client, outfit_id)
 
     posted = auth_client.post(
-        "/v1/outfits/{0}/comments".format(outfit_id), json={"body": "Thanks everyone!"}
+        "/v1/outfits/{0}/comments".format(outfit_id), data={"body": "Thanks everyone!"}
     )
     assert posted.status_code == 201
 
@@ -1091,7 +1171,7 @@ def test_cannot_comment_on_someone_elses_private_outfit(client):
     client.headers.update({"Authorization": "Bearer " + other["access_token"]})
 
     blocked = client.post(
-        "/v1/outfits/{0}/comments".format(private), json={"body": "hi"}
+        "/v1/outfits/{0}/comments".format(private), data={"body": "hi"}
     )
     assert blocked.status_code == 404
 
@@ -1101,7 +1181,7 @@ def test_empty_comment_is_rejected(auth_client):
     wait_for_terminal(auth_client, outfit_id)
 
     blocked = auth_client.post(
-        "/v1/outfits/{0}/comments".format(outfit_id), json={"body": "   "}
+        "/v1/outfits/{0}/comments".format(outfit_id), data={"body": "   "}
     )
     assert blocked.status_code == 400
     assert blocked.json()["error"]["code"] == "empty_comment"
@@ -1112,7 +1192,7 @@ def test_no_delete_endpoint_for_comments(auth_client):
     outfit_id = upload(auth_client, is_public="true")["outfit_id"]
     wait_for_terminal(auth_client, outfit_id)
     comment_id = auth_client.post(
-        "/v1/outfits/{0}/comments".format(outfit_id), json={"body": "nice fit"}
+        "/v1/outfits/{0}/comments".format(outfit_id), data={"body": "nice fit"}
     ).json()["comment_id"]
 
     response = auth_client.delete("/v1/outfits/{0}/comments/{1}".format(outfit_id, comment_id))
@@ -1128,7 +1208,7 @@ def test_can_reply_to_a_top_level_comment(client):
     outfit_id = upload(client, is_public="true")["outfit_id"]
     wait_for_terminal(client, outfit_id)
     top_level_id = client.post(
-        "/v1/outfits/{0}/comments".format(outfit_id), json={"body": "nice fit"}
+        "/v1/outfits/{0}/comments".format(outfit_id), data={"body": "nice fit"}
     ).json()["comment_id"]
 
     replier = client.post(
@@ -1139,7 +1219,7 @@ def test_can_reply_to_a_top_level_comment(client):
 
     reply = client.post(
         "/v1/outfits/{0}/comments".format(outfit_id),
-        json={"body": "totally agree", "parent_id": top_level_id},
+        data={"body": "totally agree", "parent_id": top_level_id},
     )
     assert reply.status_code == 201, reply.text
 
@@ -1161,16 +1241,16 @@ def test_cannot_reply_to_a_reply(auth_client):
     outfit_id = upload(auth_client, is_public="true")["outfit_id"]
     wait_for_terminal(auth_client, outfit_id)
     top_level_id = auth_client.post(
-        "/v1/outfits/{0}/comments".format(outfit_id), json={"body": "one"}
+        "/v1/outfits/{0}/comments".format(outfit_id), data={"body": "one"}
     ).json()["comment_id"]
     reply_id = auth_client.post(
         "/v1/outfits/{0}/comments".format(outfit_id),
-        json={"body": "two", "parent_id": top_level_id},
+        data={"body": "two", "parent_id": top_level_id},
     ).json()["comment_id"]
 
     blocked = auth_client.post(
         "/v1/outfits/{0}/comments".format(outfit_id),
-        json={"body": "three", "parent_id": reply_id},
+        data={"body": "three", "parent_id": reply_id},
     )
     assert blocked.status_code == 400
     assert blocked.json()["error"]["code"] == "invalid_parent_comment"
@@ -1185,7 +1265,7 @@ def test_can_like_and_unlike_a_comment(client):
     outfit_id = upload(client, is_public="true")["outfit_id"]
     wait_for_terminal(client, outfit_id)
     comment_id = client.post(
-        "/v1/outfits/{0}/comments".format(outfit_id), json={"body": "nice fit"}
+        "/v1/outfits/{0}/comments".format(outfit_id), data={"body": "nice fit"}
     ).json()["comment_id"]
 
     liker = client.post(
@@ -1223,7 +1303,7 @@ def test_feed_reports_comment_count_and_following_owner(client):
     ).json()
     client.headers.update({"Authorization": "Bearer " + viewer["access_token"]})
 
-    client.post("/v1/outfits/{0}/comments".format(outfit_id), json={"body": "great look"})
+    client.post("/v1/outfits/{0}/comments".format(outfit_id), data={"body": "great look"})
     client.post("/v1/users/{0}/follow".format(author_id))
 
     item = next(

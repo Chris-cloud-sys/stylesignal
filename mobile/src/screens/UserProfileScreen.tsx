@@ -3,11 +3,12 @@
  * photo grid (see components/PhotoGrid.tsx). Read-only — no long-press
  * select/delete, since these aren't the caller's own outfits. */
 import React, { useCallback, useEffect, useState } from 'react';
-import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
 
 import { absoluteMediaUrl, fetchUserProfile, followUser, unfollowUser } from '../api/client';
 import type { OutfitListItem, UserProfile } from '../api/types';
 import { Avatar, Button } from '../components/primitives';
+import { FloatingBackButton } from '../components/FloatingBackButton';
 import { PhotoGrid } from '../components/PhotoGrid';
 import { colors, space, type } from '../theme';
 
@@ -119,11 +120,7 @@ export function UserProfileScreen({
 
   return (
     <View style={styles.flex}>
-      <View style={styles.header}>
-        <Pressable onPress={onBack} accessibilityRole="button">
-          <Text style={styles.backLink}>Back</Text>
-        </Pressable>
-      </View>
+      <View style={styles.header} />
 
       {error ? <Text style={styles.error}>{error}</Text> : null}
 
@@ -164,6 +161,8 @@ export function UserProfileScreen({
           ) : undefined
         }
       />
+
+      <FloatingBackButton onPress={onBack} />
     </View>
   );
 }
@@ -189,7 +188,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: space.lg,
     paddingTop: space.lg,
   },
-  backLink: { ...type.body, color: colors.accent, fontWeight: '600' },
   profileHead: {
     paddingBottom: space.lg,
     marginBottom: space.md,

@@ -29,9 +29,10 @@ import {
 } from '../api/client';
 import type { OutfitListItem } from '../api/types';
 import { CommentSheet } from './CommentSheet';
+import { FloatingBackButton } from './FloatingBackButton';
 import { Avatar } from './primitives';
 import { ShareOutfitAction } from './ShareOutfitAction';
-import { colors, radius, sentenceCase, space, type, weight } from '../theme';
+import { colors, radius, sentenceCase, space, type } from '../theme';
 
 interface Props {
   items: OutfitListItem[];
@@ -50,14 +51,29 @@ export function BrowseFeed({ items, initialIndex, onBack, onOpenProfile }: Props
       .catch(() => undefined);
   }, []);
 
+  // SPEC+ (docs/spec-deviations.md #46) — the real cause of "opens to a
+  // blank white screen, the photo only appears after scrolling": passing
+  // initialScrollIndex jumps the scroll *offset* to an estimate computed
+  // before any real layout exists (card height varies with rail/verdict
+  // length, so there's no getItemLayout to give FlatList an exact one) —
+  // the jump lands correctly, but the cell at that position hasn't
+  // actually been measured/rendered yet, so it paints blank until a
+  // manual scroll forces FlatList to remeasure. Fixed by letting the list
+  // mount and render normally from the top first (no initialScrollIndex
+  // at all), then scrolling to the tapped item on the next tick, by
+  // which point real cells exist to land on.
+  useEffect(() => {
+    if (initialIndex <= 0) return;
+    const id = setTimeout(() => {
+      listRef.current?.scrollToIndex({ index: initialIndex, animated: false });
+    }, 50);
+    return () => clearTimeout(id);
+  }, [initialIndex]);
+
   return (
     <View style={styles.flex}>
       <View style={styles.header}>
-        <Pressable onPress={onBack} accessibilityRole="button">
-          <Text style={styles.backLink}>Back</Text>
-        </Pressable>
         <Text style={styles.title}>Browse</Text>
-        <View style={styles.headerSpacer} />
       </View>
 
       <FlatList
@@ -66,15 +82,18 @@ export function BrowseFeed({ items, initialIndex, onBack, onOpenProfile }: Props
         keyExtractor={(item) => item.outfit_id}
         contentContainerStyle={styles.list}
         keyboardShouldPersistTaps="handled"
-        initialScrollIndex={initialIndex > 0 ? initialIndex : undefined}
-        onScrollToIndexFailed={({ index }) => {
-          // The card's own height varies with rail/verdict-text length, so
-          // FlatList can't compute an exact offset up front without
-          // getItemLayout — retry once layout has actually happened.
-          setTimeout(
-            () => listRef.current?.scrollToIndex({ index, animated: false }),
-            50,
-          );
+        onScrollToIndexFailed={(info) => {
+          // RN's own documented recovery for this: land close via the
+          // estimated offset first (cheap, always available), then retry
+          // the precise index once that scroll has given FlatList a
+          // fresh set of rendered cells to measure from.
+          listRef.current?.scrollToOffset({
+            offset: info.averageItemLength * info.index,
+            animated: false,
+          });
+          setTimeout(() => {
+            listRef.current?.scrollToIndex({ index: info.index, animated: false });
+          }, 100);
         }}
         renderItem={({ item }) => (
           <BrowseCard
@@ -84,6 +103,8 @@ export function BrowseFeed({ items, initialIndex, onBack, onOpenProfile }: Props
           />
         )}
       />
+
+      <FloatingBackButton onPress={onBack} />
     </View>
   );
 }
@@ -270,15 +291,10 @@ function BrowseCard({
 const styles = StyleSheet.create({
   flex: { flex: 1, backgroundColor: colors.background },
   header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
     paddingHorizontal: space.lg,
     paddingTop: space.lg,
     paddingBottom: space.md,
   },
-  headerSpacer: { width: 40 },
-  backLink: { ...type.body, color: colors.accent, fontWeight: weight.medium },
   title: { ...type.title, color: colors.text },
   list: { paddingHorizontal: space.lg, paddingBottom: space.xxl },
 

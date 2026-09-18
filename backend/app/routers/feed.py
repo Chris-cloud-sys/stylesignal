@@ -8,7 +8,7 @@ the §1 earn-by-rating hook on the free tier.
 import uuid
 from typing import Dict, List, Optional
 
-from fastapi import APIRouter, Depends, Query, status
+from fastapi import APIRouter, Depends, File, Form, Query, UploadFile, status
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
@@ -31,7 +31,6 @@ from ..models import (
 )
 from ..quota import credit_rating, quota_out
 from ..schemas import (
-    CommentCreateRequest,
     CommentLikeResponse,
     CommentListResponse,
     CommentOut,
@@ -43,10 +42,22 @@ from ..schemas import (
     RatingResponse,
 )
 from ..storage import get_storage
+from ..worker.preprocess import UndecodableImage, _encode_jpeg, _fit, _open_and_normalise
 
 router = APIRouter(tags=["community"])
 
 settings = get_settings()
+
+# SPEC+ — comment image attachments (docs/spec-deviations.md). Same
+# allowed-types set as avatar upload; a comment photo is a casual aside
+# (what someone's asking about, a similar item), not a detail shot, so a
+# smaller longest-edge than an outfit scan is plenty.
+COMMENT_IMAGE_ALLOWED_TYPES = {
+    "image/jpeg", "image/jpg", "image/png", "image/heic", "image/heif", "image/webp",
+}
+COMMENT_IMAGE_MAX_UPLOAD_BYTES = 8 * 1024 * 1024
+COMMENT_IMAGE_LONGEST_EDGE = 1080
+COMMENT_IMAGE_JPEG_QUALITY = 85
 
 
 def _require_community_enabled() -> None:
@@ -373,6 +384,7 @@ def _comment_out(
         author_display_name=(display_name or "").strip() or email.split("@")[0],
         author_avatar_url=get_storage().signed_url(avatar_key) if avatar_key else None,
         body=comment.body,
+        image_url=get_storage().signed_url(comment.image_key) if comment.image_key else None,
         created_at=comment.created_at,
         is_mine=comment.author_id == user.id,
         like_count=like_count,
@@ -499,7 +511,16 @@ def list_replies(
 )
 def add_comment(
     outfit_id: uuid.UUID,
-    payload: CommentCreateRequest,
+    # Not Form(...) (required) — an empty-string form field can get
+    # dropped entirely by some multipart clients (confirmed with httpx's
+    # own test client combining `files=` + an empty `data["body"]`;
+    # plausible on-device with RN's FormData too) rather than sent as
+    # empty. The "not body and image is None" check below is the real
+    # validation; requiring the field to be structurally present on top
+    # of that just reintroduces the same failure by another path.
+    body: str = Form(default=""),
+    parent_id: Optional[uuid.UUID] = Form(default=None),
+    image: Optional[UploadFile] = File(default=None),
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> CommentOut:
@@ -507,12 +528,15 @@ def add_comment(
     ratelimit.check("comment:{0}".format(user.id), limit=60, window_seconds=3600)
     _commentable_outfit(db, outfit_id, user)
 
-    body = payload.body.strip()
-    if not body:
+    body = body.strip()
+    # SPEC+ — comment image attachments (docs/spec-deviations.md). A photo
+    # on its own is a real comment (a normal TikTok/Instagram pattern) —
+    # only reject truly empty (no text, no image).
+    if not body and image is None:
         raise bad_request("empty_comment", "A comment cannot be empty.")
 
-    if payload.parent_id is not None:
-        parent = db.get(Comment, payload.parent_id)
+    if parent_id is not None:
+        parent = db.get(Comment, parent_id)
         if (
             parent is None
             or parent.outfit_id != outfit_id
@@ -523,11 +547,14 @@ def add_comment(
                 "Replies can only be added to a top-level comment on this outfit.",
             )
 
+    image_key = _store_comment_image(image) if image is not None else None
+
     comment = Comment(
         outfit_id=outfit_id,
         author_id=user.id,
-        parent_id=payload.parent_id,
+        parent_id=parent_id,
         body=body[:COMMENT_BODY_MAX_LENGTH],
+        image_key=image_key,
     )
     db.add(comment)
     db.commit()
@@ -540,9 +567,43 @@ def add_comment(
         author_display_name=display_name,
         author_avatar_url=get_storage().signed_url(user.avatar_key) if user.avatar_key else None,
         body=comment.body,
+        image_url=get_storage().signed_url(image_key) if image_key else None,
         created_at=comment.created_at,
         is_mine=True,
     )
+
+
+def _store_comment_image(image: UploadFile) -> str:
+    content_type = (image.content_type or "").lower().split(";")[0].strip()
+    if content_type not in COMMENT_IMAGE_ALLOWED_TYPES:
+        raise bad_request(
+            "unsupported_media_type",
+            "Comment photos must be a JPEG, PNG, WebP or HEIC image.",
+            {"received": content_type or "unknown"},
+        )
+
+    data = image.file.read(COMMENT_IMAGE_MAX_UPLOAD_BYTES + 1)
+    if not data:
+        raise bad_request("empty_upload", "The uploaded file was empty.")
+    if len(data) > COMMENT_IMAGE_MAX_UPLOAD_BYTES:
+        raise APIError(
+            status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            "payload_too_large",
+            "Comment photos must be under {0} MB.".format(
+                COMMENT_IMAGE_MAX_UPLOAD_BYTES // (1024 * 1024)
+            ),
+        )
+
+    try:
+        normalised = _open_and_normalise(data)
+    except UndecodableImage as exc:
+        raise bad_request("undecodable_image", str(exc)) from exc
+    fitted = _fit(normalised, COMMENT_IMAGE_LONGEST_EDGE)
+    jpeg_bytes = _encode_jpeg(fitted, COMMENT_IMAGE_JPEG_QUALITY)
+
+    image_key = "comments/{0}.jpg".format(uuid.uuid4())
+    get_storage().put(image_key, jpeg_bytes, "image/jpeg")
+    return image_key
 
 
 @router.post(

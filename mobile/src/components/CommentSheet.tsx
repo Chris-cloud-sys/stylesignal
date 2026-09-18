@@ -8,14 +8,18 @@
  * There is no delete here on purpose — removed, not just hidden.
  */
 import { Ionicons } from '@expo/vector-icons';
-import React, { useCallback, useEffect, useState } from 'react';
+import * as ImagePicker from 'expo-image-picker';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  Alert,
   Dimensions,
   FlatList,
+  Image,
   Keyboard,
   Modal,
   Pressable,
+  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -23,10 +27,34 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { fetchComments, fetchMe, fetchReplies, likeComment, postComment, unlikeComment } from '../api/client';
+import { absoluteMediaUrl, fetchComments, fetchMe, fetchReplies, likeComment, postComment, unlikeComment } from '../api/client';
 import type { Comment } from '../api/types';
 import { Avatar } from './primitives';
 import { colors, radius, space, type, weight } from '../theme';
+
+/** A small, fixed set rather than a full emoji keyboard/library — covers
+ * the common reactions without pulling in a picker dependency. */
+const QUICK_EMOJI = [
+  '😀', '😂', '🥰', '😍', '😎', '🔥', '👏', '🙌',
+  '💯', '❤️', '👍', '😢', '😮', '🤔', '✨', '👀',
+];
+
+/** TikTok-compact relative time ("1d", "3h", "Just now") — Comment.created_at
+ * wasn't shown anywhere in the UI before; the TikTok-style actions row this
+ * redesign adds needs it. */
+function relativeCommentDate(isoString: string): string {
+  const seconds = Math.max(0, (Date.now() - new Date(isoString).getTime()) / 1000);
+  if (seconds < 60) return 'Just now';
+  const minutes = seconds / 60;
+  if (minutes < 60) return `${Math.floor(minutes)}m`;
+  const hours = minutes / 60;
+  if (hours < 24) return `${Math.floor(hours)}h`;
+  const days = hours / 24;
+  if (days < 7) return `${Math.floor(days)}d`;
+  const weeks = days / 7;
+  if (weeks < 5) return `${Math.floor(weeks)}w`;
+  return new Date(isoString).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+}
 
 // Numeric, not percentage — a percentage height only resolves reliably
 // against a parent with its own definite (non-content-based) height, which
@@ -106,6 +134,11 @@ export function CommentSheet({ outfitId, visible, onClose, onCountChange }: Prop
   const [replyTarget, setReplyTarget] = useState<Comment | null>(null);
   const [replies, setReplies] = useState<Record<string, Comment[]>>({});
   const [repliesLoading, setRepliesLoading] = useState<Record<string, boolean>>({});
+  // SPEC+ — TikTok-style composer (docs/spec-deviations.md): @ mention,
+  // emoji picker, image attachment.
+  const [pickedImageUri, setPickedImageUri] = useState<string | null>(null);
+  const [emojiPickerOpen, setEmojiPickerOpen] = useState(false);
+  const inputRef = useRef<TextInput>(null);
 
   const load = useCallback(async (): Promise<void> => {
     setLoading(true);
@@ -183,10 +216,17 @@ export function CommentSheet({ outfitId, visible, onClose, onCountChange }: Prop
 
   const send = async (): Promise<void> => {
     const body = draft.trim();
-    if (!body || sending) return;
+    // A photo on its own is a real comment — matches the backend's own
+    // "not body and image is None" rule, not just "body must be non-empty".
+    if ((!body && !pickedImageUri) || sending) return;
     setSending(true);
     try {
-      const comment = await postComment(outfitId, body, replyTarget?.comment_id);
+      const comment = await postComment(
+        outfitId,
+        body,
+        replyTarget?.comment_id,
+        pickedImageUri ?? undefined,
+      );
       if (replyTarget) {
         setReplies((existing) => ({
           ...existing,
@@ -205,12 +245,42 @@ export function CommentSheet({ outfitId, visible, onClose, onCountChange }: Prop
       setTotalCount((count) => count + 1);
       onCountChange(1);
       setDraft('');
+      setPickedImageUri(null);
       setReplyTarget(null);
     } catch {
       setError('Could not post that comment. Try again.');
     } finally {
       setSending(false);
     }
+  };
+
+  // Appends rather than inserting at the cursor — RN's TextInput doesn't
+  // expose selection position without extra tracking, and appending is
+  // still the common case (mentioning someone right as you start typing
+  // about them). No autocomplete/search against real users — that would
+  // need a backend search endpoint that doesn't exist yet; this is the
+  // typing shortcut only.
+  const insertAtMention = (): void => {
+    setDraft((current) => (current.length === 0 || current.endsWith(' ') ? `${current}@` : `${current} @`));
+    inputRef.current?.focus();
+  };
+
+  const insertEmoji = (emoji: string): void => {
+    setDraft((current) => current + emoji);
+  };
+
+  const pickImage = async (): Promise<void> => {
+    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!permission.granted) {
+      Alert.alert('Permission needed', 'StyleSignal needs photo access to attach a picture to your comment.');
+      return;
+    }
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      quality: 0.85,
+    });
+    if (result.canceled || result.assets.length === 0) return;
+    setPickedImageUri(result.assets[0]!.uri);
   };
 
   const renderComment = (comment: Comment, parentId: string | null): React.ReactElement => (
@@ -222,46 +292,59 @@ export function CommentSheet({ outfitId, visible, onClose, onCountChange }: Prop
       />
       <View style={styles.rowBody}>
         <Text style={styles.author}>{comment.author_display_name}</Text>
-        <Text style={styles.body}>{comment.body}</Text>
+        {comment.body ? <Text style={styles.body}>{comment.body}</Text> : null}
+        {comment.image_url ? (
+          <Image
+            source={{ uri: absoluteMediaUrl(comment.image_url) }}
+            style={styles.commentImage}
+            resizeMode="cover"
+          />
+        ) : null}
+        {/* TikTok-style actions row: date + Reply on the left, the like
+            glyph + count on the right — both directly under the comment
+            text, not a separate column spanning the row's full height. */}
         <View style={styles.rowActions}>
-          {!parentId ? (
-            <Pressable
-              onPress={() => setReplyTarget(comment)}
-              accessibilityRole="button"
-              accessibilityLabel={`Reply to ${comment.author_display_name}`}
-            >
-              <Text style={styles.replyLink}>Reply</Text>
-            </Pressable>
-          ) : null}
-          {!parentId && comment.reply_count > 0 ? (
-            <Pressable
-              onPress={() => void toggleReplies(comment)}
-              accessibilityRole="button"
-              accessibilityLabel={`View ${comment.reply_count} replies`}
-            >
-              <Text style={styles.replyLink}>
-                {replies[comment.comment_id]
-                  ? 'Hide replies'
-                  : `View ${comment.reply_count} ${comment.reply_count === 1 ? 'reply' : 'replies'}`}
-              </Text>
-            </Pressable>
-          ) : null}
-          {repliesLoading[comment.comment_id] ? (
-            <ActivityIndicator size="small" color={colors.textMuted} />
-          ) : null}
+          <View style={styles.rowActionsLeft}>
+            <Text style={styles.metaText}>{relativeCommentDate(comment.created_at)}</Text>
+            {!parentId ? (
+              <Pressable
+                onPress={() => setReplyTarget(comment)}
+                accessibilityRole="button"
+                accessibilityLabel={`Reply to ${comment.author_display_name}`}
+              >
+                <Text style={styles.replyLink}>Reply</Text>
+              </Pressable>
+            ) : null}
+            {!parentId && comment.reply_count > 0 ? (
+              <Pressable
+                onPress={() => void toggleReplies(comment)}
+                accessibilityRole="button"
+                accessibilityLabel={`View ${comment.reply_count} replies`}
+              >
+                <Text style={styles.replyLink}>
+                  {replies[comment.comment_id]
+                    ? 'Hide replies'
+                    : `View ${comment.reply_count} ${comment.reply_count === 1 ? 'reply' : 'replies'}`}
+                </Text>
+              </Pressable>
+            ) : null}
+            {repliesLoading[comment.comment_id] ? (
+              <ActivityIndicator size="small" color={colors.textMuted} />
+            ) : null}
+          </View>
+          <Pressable
+            onPress={() => toggleCommentLike(comment, parentId)}
+            style={styles.likeButton}
+            accessibilityRole="button"
+            accessibilityLabel={comment.liked_by_me ? 'Unlike comment' : 'Like comment'}
+          >
+            <Text style={[styles.likeGlyph, comment.liked_by_me && styles.likeGlyphActive]}>
+              {comment.liked_by_me ? '♥' : '♡'}
+            </Text>
+            <Text style={styles.likeCount}>{comment.like_count}</Text>
+          </Pressable>
         </View>
       </View>
-      <Pressable
-        onPress={() => toggleCommentLike(comment, parentId)}
-        style={styles.likeButton}
-        accessibilityRole="button"
-        accessibilityLabel={comment.liked_by_me ? 'Unlike comment' : 'Like comment'}
-      >
-        <Text style={[styles.likeGlyph, comment.liked_by_me && styles.likeGlyphActive]}>
-          {comment.liked_by_me ? '♥' : '♡'}
-        </Text>
-        <Text style={styles.likeCount}>{comment.like_count}</Text>
-      </Pressable>
     </View>
   );
 
@@ -298,6 +381,11 @@ export function CommentSheet({ outfitId, visible, onClose, onCountChange }: Prop
         >
           <View style={styles.handle} />
           <View style={styles.titleRow}>
+            {/* A same-width invisible spacer on the left balances the close
+                button on the right, so the count truly centers in the row
+                instead of just centering in the leftover space next to an
+                off-center close button — matches TikTok's header. */}
+            <View style={styles.titleSpacer} />
             <Text style={styles.title}>{totalCount} {totalCount === 1 ? 'comment' : 'comments'}</Text>
             <Pressable onPress={onClose} accessibilityRole="button" accessibilityLabel="Close comments" hitSlop={8}>
               <Ionicons name="close" size={22} color={colors.text} />
@@ -339,9 +427,46 @@ export function CommentSheet({ outfitId, visible, onClose, onCountChange }: Prop
             </View>
           ) : null}
 
+          {pickedImageUri ? (
+            <View style={styles.imagePreviewRow}>
+              <Image source={{ uri: pickedImageUri }} style={styles.imagePreview} resizeMode="cover" />
+              <Pressable
+                onPress={() => setPickedImageUri(null)}
+                accessibilityRole="button"
+                accessibilityLabel="Remove picture"
+                hitSlop={8}
+              >
+                <Ionicons name="close-circle" size={20} color={colors.textMuted} />
+              </Pressable>
+            </View>
+          ) : null}
+
+          {emojiPickerOpen ? (
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              style={styles.emojiRow}
+              contentContainerStyle={styles.emojiRowContent}
+              keyboardShouldPersistTaps="handled"
+            >
+              {QUICK_EMOJI.map((emoji) => (
+                <Pressable
+                  key={emoji}
+                  onPress={() => insertEmoji(emoji)}
+                  style={styles.emojiButton}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Insert ${emoji}`}
+                >
+                  <Text style={styles.emojiText}>{emoji}</Text>
+                </Pressable>
+              ))}
+            </ScrollView>
+          ) : null}
+
           <View style={styles.composerRow}>
             <Avatar name={myName || '?'} uri={myAvatarUrl} size={30} />
             <TextInput
+              ref={inputRef}
               style={styles.input}
               placeholder={replyTarget ? `Reply to ${replyTarget.author_display_name}` : 'Add a comment'}
               placeholderTextColor={colors.textMuted}
@@ -350,6 +475,44 @@ export function CommentSheet({ outfitId, visible, onClose, onCountChange }: Prop
               maxLength={500}
               multiline
             />
+            {/* @ mention, emoji, and a photo attachment — TikTok's own
+                composer row. @ appends the character rather than opening a
+                real mention search (no backend user-search endpoint exists
+                yet to autocomplete against). */}
+            <View style={styles.composerIcons}>
+              <Pressable
+                onPress={insertAtMention}
+                hitSlop={6}
+                accessibilityRole="button"
+                accessibilityLabel="Mention someone"
+              >
+                <Text style={styles.composerIconGlyph}>@</Text>
+              </Pressable>
+              <Pressable
+                onPress={() => setEmojiPickerOpen((open) => !open)}
+                hitSlop={6}
+                accessibilityRole="button"
+                accessibilityLabel="Insert an emoji"
+              >
+                <Ionicons
+                  name="happy-outline"
+                  size={20}
+                  color={emojiPickerOpen ? colors.accent : colors.textMuted}
+                />
+              </Pressable>
+              <Pressable
+                onPress={() => void pickImage()}
+                hitSlop={6}
+                accessibilityRole="button"
+                accessibilityLabel="Attach a picture"
+              >
+                <Ionicons
+                  name="image-outline"
+                  size={20}
+                  color={pickedImageUri ? colors.accent : colors.textMuted}
+                />
+              </Pressable>
+            </View>
             <Pressable
               // onPressIn, not onPress: tapping this button blurs the
               // TextInput, which dismisses the keyboard as a side effect —
@@ -360,11 +523,18 @@ export function CommentSheet({ outfitId, visible, onClose, onCountChange }: Prop
               // silently misses. onPressIn fires on touch-down, before any
               // of that reflow can happen.
               onPressIn={() => void send()}
-              disabled={!draft.trim() || sending}
+              disabled={(!draft.trim() && !pickedImageUri) || sending}
               accessibilityRole="button"
               accessibilityLabel="Post comment"
             >
-              <Text style={[styles.send, (!draft.trim() || sending) && styles.sendDisabled]}>Post</Text>
+              <Text
+                style={[
+                  styles.send,
+                  ((!draft.trim() && !pickedImageUri) || sending) && styles.sendDisabled,
+                ]}
+              >
+                Post
+              </Text>
             </Pressable>
           </View>
         </View>
@@ -407,7 +577,11 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     marginBottom: space.sm,
   },
-  title: { ...type.bodyMedium, color: colors.text },
+  // Matches the close icon's footprint so the title's own flex:1 +
+  // textAlign:'center' centers it in the row itself, not just in the
+  // leftover space beside an off-center close button — TikTok's header.
+  titleSpacer: { width: 22 },
+  title: { ...type.bodyMedium, color: colors.text, flex: 1, textAlign: 'center' },
   spinner: { marginTop: space.xl },
   // flexShrink (not flexGrow: 0) — this is the one element that should
   // give up space first when the sheet's own maxHeight shrinks to make
@@ -417,25 +591,46 @@ const styles = StyleSheet.create({
   empty: { ...type.body, color: colors.textMuted, paddingVertical: space.lg },
   error: { ...type.meta, color: colors.systemError, marginBottom: space.sm },
 
+  // No divider between comments — TikTok separates with whitespace alone,
+  // not a line, so the vertical padding is a little more generous here
+  // than the old bordered rows needed.
   row: {
     flexDirection: 'row',
     alignItems: 'flex-start',
     gap: space.sm,
-    paddingVertical: space.sm,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.border,
+    paddingVertical: space.md,
   },
   replyRow: {
     flexDirection: 'row',
     alignItems: 'flex-start',
     gap: space.sm,
-    paddingVertical: space.sm,
+    paddingVertical: space.md,
     paddingLeft: space.xl,
   },
   rowBody: { flex: 1 },
-  author: { ...type.meta, color: colors.text, fontWeight: weight.medium },
+  // Username reads lighter than the comment itself — TikTok differentiates
+  // by weight of ink, not by making the name bold; the comment body is
+  // the thing actually meant to be read.
+  author: { ...type.meta, color: colors.textMuted, fontWeight: weight.medium },
   body: { ...type.body, color: colors.text, marginTop: 2 },
-  rowActions: { flexDirection: 'row', alignItems: 'center', gap: space.md, marginTop: space.xs },
+  commentImage: {
+    width: 160,
+    height: 160,
+    borderRadius: radius.md,
+    marginTop: space.sm,
+    backgroundColor: colors.surface,
+  },
+  // Date + Reply on the left, the like glyph on the right — both directly
+  // under the comment text, one row, space-between — not a separate
+  // column running the row's full height the way it was before.
+  rowActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginTop: space.xs,
+  },
+  rowActionsLeft: { flexDirection: 'row', alignItems: 'center', gap: space.md },
+  metaText: { ...type.meta, color: colors.textMuted },
   replyLink: { ...type.meta, color: colors.textMuted, fontWeight: weight.medium },
 
   // §2.6: amber is the accent, never red.
@@ -456,6 +651,26 @@ const styles = StyleSheet.create({
   },
   replyingToText: { ...type.meta, color: colors.textMuted },
 
+  imagePreviewRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: space.sm,
+    marginTop: space.sm,
+  },
+  imagePreview: { width: 48, height: 48, borderRadius: radius.sm, backgroundColor: colors.surface },
+
+  emojiRow: { marginTop: space.sm },
+  emojiRowContent: { gap: space.sm, paddingVertical: space.xs },
+  emojiButton: {
+    width: 36,
+    height: 36,
+    borderRadius: radius.sm,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.surface,
+  },
+  emojiText: { fontSize: 20 },
+
   composerRow: {
     flexDirection: 'row',
     alignItems: 'flex-end',
@@ -473,6 +688,15 @@ const styles = StyleSheet.create({
     paddingVertical: space.sm,
     maxHeight: 100,
   },
+  // Sits between the input and Post, at the input's own baseline —
+  // TikTok's @ / emoji / photo row lives at the right edge of the pill.
+  composerIcons: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: space.sm,
+    paddingBottom: space.sm,
+  },
+  composerIconGlyph: { ...type.bodyMedium, color: colors.textMuted, fontWeight: weight.medium },
   send: { ...type.bodyMedium, color: colors.accent, fontWeight: weight.medium, paddingVertical: space.sm },
   sendDisabled: { color: colors.textMuted },
 });

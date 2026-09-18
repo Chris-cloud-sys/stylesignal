@@ -493,6 +493,10 @@ class Comment(Base):
         Uuid, ForeignKey("comments.id", ondelete="CASCADE"), nullable=True, index=True
     )
     body: Mapped[str] = mapped_column(String(COMMENT_BODY_MAX_LENGTH), nullable=False)
+    # SPEC+ — comment image attachments (docs/spec-deviations.md). Storage
+    # key only, same "derive the key, don't store a URL" pattern as
+    # Outfit.thumb_key/User.avatar_key. Optional — most comments are text.
+    image_key: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=_utcnow
     )

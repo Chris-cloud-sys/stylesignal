@@ -1922,3 +1922,109 @@ this app, and the same proven off-screen position `ResultScreen` uses.
 Same lesson as entry #43's `keyboardShouldPersistTaps` fix: prefer a
 pattern already proven to work in this codebase over a new one that
 looks reasonable but hasn't been tested here.
+
+## 46. The real share bug (a permissions gap, not a timing one), Browse's blank-screen bug, a TikTok comment redesign, and reachable back buttons
+
+Five requests, confirmed understood item-by-item with Chris before any
+of it was built (he asked explicitly, given how large the batch was).
+
+**The share bug, actually fixed this time.** Entries #44 and #45 each
+fixed a real bug in the capture/share mechanism, and each time Chris
+reported the exact same symptom afterward: tap Share, it spins forever,
+nothing opens. That repetition was the signal to stop iterating on
+*how the image gets captured* and check something more basic instead —
+what `ShareOutfitAction` actually fetches. It calls `GET /v1/outfits/
+{id}` to get full feedback for the branded card. That route's access
+check, `_owned_outfit`, is strict owner-only (`outfit.user_id !=
+user.id` → 404) — correct for `ResultScreen`, which only ever reads the
+caller's own outfits, but `ShareOutfitAction` is reached from Community,
+Browse, and Favorites, where most cards belong to *someone else*. Every
+non-owner share was 404ing on the very first fetch, silently, before
+any capture logic ran — no amount of fixing the capture timing could
+have touched this. Fixed with a second, less strict helper,
+`_owned_or_public_outfit` (visible if it's yours *or* it's public — the
+same rule `feed.py`'s `_commentable_outfit` already applies), used only
+by `get_outfit`; every mutation endpoint (submit, reread, delete,
+wardrobe) stays on the original strict `_owned_outfit` — this is a
+read-only loosening, and exposes nothing not already visible through
+the feed/profile/comment endpoints for a public outfit. One existing
+test's premise turned out to already assume the old behavior more
+broadly than intended (`upload()`'s default `is_public` is `true`, per
+entry #29, so the "another user's outfit is a 404" test was actually
+exercising a *public* outfit) — split into two tests: a private outfit
+stays 404 for a non-owner, a public one is now readable but still not
+mutable.
+
+**Browse opens to a blank screen, image only appears after scrolling.**
+Classic `FlatList` `initialScrollIndex` trap: without `getItemLayout`
+(impossible here — card height varies with rail/verdict length), the
+prop jumps the scroll *offset* to an estimate computed before any real
+layout exists. The jump lands, but the cell there hasn't been measured/
+rendered yet, so it paints blank until a manual scroll forces FlatList
+to remeasure. Fixed by dropping `initialScrollIndex` entirely — the
+list now mounts and renders normally from the top first, then a
+`useEffect` scrolls to the tapped item on the next tick, by which point
+real cells exist to land on. `onScrollToIndexFailed` also upgraded to
+RN's own documented two-step recovery (`scrollToOffset` with the
+estimated offset first, then retry `scrollToIndex`) rather than a bare
+retry.
+
+**TikTok comment redesign.** Styling: username now reads in
+`colors.textMuted` (was full ink, same weight as the comment itself —
+TikTok differentiates by ink weight, not boldness), the divider between
+comments removed (whitespace alone separates them, with a little more
+vertical padding to compensate), the like glyph/count moved out of its
+own full-height column and into the same row as the date + Reply link,
+directly under the comment text with `justifyContent: 'space-between'`,
+and the comment-count header centered (a same-width invisible spacer
+balances the close button so `flex:1 + textAlign:'center'` actually
+centers in the row, not just in the leftover space). `Comment.created_at`
+was already returned by the API but never shown anywhere — added a
+compact relative-time formatter ("1d", "3h", "Just now") for the new
+actions row.
+
+Composer: added @ (appends the character — no real mention search,
+since there's no backend user-search endpoint to autocomplete against
+yet), an emoji picker (a fixed set of 16 common reactions in a
+horizontal scroll row, not a full keyboard/library), and a real photo
+attachment. The photo attachment needed backend work, not just UI:
+`Comment.image_key` (new column, nullable), `CommentOut.image_url`
+(signed URL, same pattern as every other media field in this app), and
+`POST /v1/outfits/{id}/comments` switched from a JSON body to
+multipart form data (`body`/`parent_id` as `Form` fields, `image` as an
+optional `File`) so it can carry a photo — reusing the same normalise/
+fit/encode pipeline avatar upload already established, at a smaller
+1080px longest edge (a comment photo is a casual aside, not a detail
+shot). A photo-only comment (empty text) is allowed, matching a normal
+TikTok/Instagram pattern — the "empty comment" rejection now checks
+"no text *and* no image," not just "no text." One real quirk found
+while writing the test for that: `body: str = Form(...)` (required)
+returned `422 Field required` when the test sent an explicit empty
+string alongside a file upload — httpx's own multipart encoder appears
+to drop an empty-string form field entirely when combined with `files=`.
+Since React Native's `FormData` could plausibly do the same, `body`
+was changed to `Form(default="")` rather than treating this as a
+test-only artifact — the real validation ("not body and image is
+None") already covers correctness; requiring the field to be
+structurally present on top of that just reintroduces the same failure
+by a different path. Fifteen existing comment tests updated from
+`json=` to `data=` (form-encoded) to match; three new tests cover the
+image attachment, the photo-only case, and the "no image" default.
+
+**Reachable back buttons.** Chris asked for a better *placement* for
+the top-left "Back" text link on Favorites (really: the `BrowseFeed`
+screen reached from it — Favorites itself is a tab screen with no back
+button of its own), a member's public profile, and Insights — a
+one-handed reach to the very top of a tall phone for something tapped
+often. New shared `components/FloatingBackButton.tsx`: a bottom-left
+floating circular button (`useSafeAreaInsets`-aware, same pattern as
+`TabBar.tsx`/`CommentSheet.tsx`), reachable without scrolling regardless
+of how far down the content goes — unlike appending a button at the end
+of scrollable content, which doesn't help on a long profile grid.
+Additive to the hardware/gesture `BackHandler` from entry #44, not a
+replacement — iOS has no hardware back button, so a visible affordance
+still has to live somewhere. Applied to `InsightsScreen`,
+`UserProfileScreen`, and `BrowseFeed`; `ResultScreen`'s top "Home" link
+and `WardrobeScreen`'s were left alone — not named in the ask, and
+`ResultScreen`'s already sits at the very top of a hero photo rather
+than a plain header, a different layout problem.

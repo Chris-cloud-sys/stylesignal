@@ -8,10 +8,11 @@
  * the app — rates are phrased in words, never shown as raw percentages.
  */
 import React, { useEffect, useState } from 'react';
-import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
 
 import { fetchInsights } from '../api/client';
 import type { Insights } from '../api/types';
+import { FloatingBackButton } from '../components/FloatingBackButton';
 import { SectionLabel } from '../components/primitives';
 import { colors, radius, sentenceCase, space, type } from '../theme';
 
@@ -52,9 +53,6 @@ export function InsightsScreen({ onBack }: Props): React.ReactElement {
   return (
     <View style={styles.flex}>
       <View style={styles.header}>
-        <Pressable onPress={onBack} accessibilityRole="button">
-          <Text style={styles.backLink}>Back</Text>
-        </Pressable>
         <Text style={styles.title}>Your style, so far</Text>
       </View>
 
@@ -134,6 +132,8 @@ export function InsightsScreen({ onBack }: Props): React.ReactElement {
           </View>
         </View>
       ) : null}
+
+      <FloatingBackButton onPress={onBack} />
     </View>
   );
 }
@@ -145,7 +145,6 @@ const styles = StyleSheet.create({
     paddingTop: space.lg,
     paddingBottom: space.md,
   },
-  backLink: { ...type.body, color: colors.accent, fontWeight: '600', marginBottom: space.sm },
   title: { ...type.title, color: colors.text },
   spinner: { marginTop: space.xl },
   body: { paddingHorizontal: space.lg, paddingBottom: space.xxl },

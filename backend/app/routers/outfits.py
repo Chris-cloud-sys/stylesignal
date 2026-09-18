@@ -503,7 +503,15 @@ def get_outfit(
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> OutfitDetail:
-    outfit = _owned_outfit(db, outfit_id, user)
+    # SPEC+ — real image shares from Community/Browse/Favorites (docs/
+    # spec-deviations.md #46) need this endpoint too, for outfits that
+    # aren't the caller's own: ShareOutfitAction fetches full feedback to
+    # build the branded share image, and most of what it shares belongs to
+    # someone else. _owned_or_public_outfit (not the stricter
+    # _owned_outfit every mutation endpoint below still uses) exposes
+    # nothing not already visible through the feed/profile/comment
+    # endpoints for a public outfit — same data, different route.
+    outfit = _owned_or_public_outfit(db, outfit_id, user)
     _reap_if_stale(db, outfit)
     detail = build_outfit_detail(outfit)
     if outfit.is_public:
@@ -666,6 +674,22 @@ def _owned_outfit(db: Session, outfit_id: uuid.UUID, user: User) -> Outfit:
     # A deleted or someone else's outfit is a 404, not a 403 — do not confirm
     # that an id exists to a caller who does not own it.
     if outfit is None or outfit.deleted_at is not None or outfit.user_id != user.id:
+        raise not_found("Outfit")
+    return outfit
+
+
+def _owned_or_public_outfit(db: Session, outfit_id: uuid.UUID, user: User) -> Outfit:
+    """Same 404-not-403 rule as `_owned_outfit`, loosened for `get_outfit`
+    only: visible if it's yours OR it's public — mirrors the same "public
+    OR mine" rule feed.py's `_commentable_outfit` already applies. Every
+    mutation endpoint (submit, reread, delete, wardrobe) stays on the
+    strict owner-only `_owned_outfit` above; this is read-only."""
+    outfit = db.get(Outfit, outfit_id)
+    if (
+        outfit is None
+        or outfit.deleted_at is not None
+        or (outfit.user_id != user.id and not outfit.is_public)
+    ):
         raise not_found("Outfit")
     return outfit
 

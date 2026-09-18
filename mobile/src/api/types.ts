@@ -262,6 +262,8 @@ export interface Comment {
   author_display_name: string;
   author_avatar_url?: string | null;
   body: string;
+  /** SPEC+ — comment image attachments (docs/spec-deviations.md). */
+  image_url?: string | null;
   created_at: string;
   is_mine: boolean;
   like_count: number;

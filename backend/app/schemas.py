@@ -336,19 +336,16 @@ class FeedResponse(BaseModel):
 
 
 # --- Comment threads (SPEC+ — see docs/spec-deviations.md) -----------------
-class CommentCreateRequest(BaseModel):
-    body: str = Field(min_length=1, max_length=500)
-    # One level deep only — must name an existing top-level comment on the
-    # same outfit (enforced in the router). Omitted for a top-level comment.
-    parent_id: Optional[uuid.UUID] = None
-
-
 class CommentOut(BaseModel):
     comment_id: uuid.UUID
     author_id: uuid.UUID
     author_display_name: str
     author_avatar_url: Optional[str] = None
     body: str
+    # SPEC+ — comment image attachments (docs/spec-deviations.md). Signed
+    # URL, not a stored value — computed from Comment.image_key the same
+    # way every other media URL in this app is.
+    image_url: Optional[str] = None
     created_at: datetime
     is_mine: bool = False
     like_count: int = 0

@@ -382,11 +382,28 @@ export function fetchReplies(
   return request<CommentListResponse>(`/v1/outfits/${outfitId}/comments/${commentId}/replies${query}`);
 }
 
-export function postComment(outfitId: string, body: string, parentId?: string): Promise<Comment> {
+/** SPEC+ — comment image attachments (docs/spec-deviations.md). The
+ * endpoint is form-encoded (not JSON) even when `imageUri` is omitted, so
+ * there's one request shape either way rather than two code paths. */
+export function postComment(
+  outfitId: string,
+  body: string,
+  parentId?: string,
+  imageUri?: string,
+): Promise<Comment> {
+  const form = new FormData();
+  form.append('body', body);
+  if (parentId) form.append('parent_id', parentId);
+  if (imageUri) {
+    form.append('image', {
+      uri: imageUri,
+      name: 'comment.jpg',
+      type: 'image/jpeg',
+    } as unknown as Blob);
+  }
   return request<Comment>(`/v1/outfits/${outfitId}/comments`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(parentId ? { body, parent_id: parentId } : { body }),
+    body: form as unknown as BodyInit,
   });
 }
 

@@ -13,7 +13,7 @@
  */
 import { Ionicons } from '@expo/vector-icons';
 import React, { useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Pressable, StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
+import { ActivityIndicator, Image, Pressable, StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
 
 import { fetchOutfit } from '../api/client';
 import type { Feedback } from '../api/types';
@@ -51,6 +51,25 @@ export function ShareOutfitAction({
         // fall back to a plain text share rather than nothing.
         setBusy(false);
         return;
+      }
+      // SPEC+ (docs/spec-deviations.md) — the real cause of the shared
+      // image missing the outfit photo: ResultScreen's own (working)
+      // share never has this problem because its ShareCard is always
+      // already mounted, and the photo's already been on-screen — fully
+      // downloaded and painted — for a while by the time Share is
+      // tapped. This component mounts ShareCard fresh, on demand, right
+      // here, so the photo starts downloading from zero; a short capture
+      // delay only ever had time for the *local* data (verdict text,
+      // palette, meters) to render, not a network image. Prefetching
+      // before the card even mounts means it's already in the image
+      // cache by the time ShareCard's <Image> asks for it.
+      if (thumbUri) {
+        try {
+          await Image.prefetch(thumbUri);
+        } catch {
+          // Prefetch failing isn't fatal — ShareCard just captures with
+          // its placeholder in that case, same as no photo at all.
+        }
       }
       // Mounting the off-screen ShareCard is what triggers the capture,
       // in the effect below, once it's actually had a render pass.

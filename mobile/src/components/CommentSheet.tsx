@@ -27,8 +27,17 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { absoluteMediaUrl, fetchComments, fetchMe, fetchReplies, likeComment, postComment, unlikeComment } from '../api/client';
-import type { Comment } from '../api/types';
+import {
+  absoluteMediaUrl,
+  fetchComments,
+  fetchMe,
+  fetchReplies,
+  likeComment,
+  postComment,
+  searchUsers,
+  unlikeComment,
+} from '../api/client';
+import type { Comment, UserSearchResult } from '../api/types';
 import { Avatar } from './primitives';
 import { colors, radius, space, type, weight } from '../theme';
 
@@ -138,7 +147,52 @@ export function CommentSheet({ outfitId, visible, onClose, onCountChange }: Prop
   // emoji picker, image attachment.
   const [pickedImageUri, setPickedImageUri] = useState<string | null>(null);
   const [emojiPickerOpen, setEmojiPickerOpen] = useState(false);
+  // Real @ mention, like TikTok's own live-search-as-you-type picker —
+  // mentionQuery is the text typed after a trailing "@" (null when no
+  // mention is in progress), mentionResults is what that query matched.
+  const [mentionQuery, setMentionQuery] = useState<string | null>(null);
+  const [mentionResults, setMentionResults] = useState<UserSearchResult[]>([]);
   const inputRef = useRef<TextInput>(null);
+
+  // Only detects a *trailing* @token (RN's TextInput doesn't expose
+  // cursor/selection position without extra tracking, so this covers the
+  // common case — mentioning someone right as you type about them — the
+  // same simplification the @ button's insertAtMention already makes).
+  useEffect(() => {
+    const match = draft.match(/(?:^|\s)@(\w*)$/);
+    setMentionQuery(match ? match[1]! : null);
+  }, [draft]);
+
+  useEffect(() => {
+    if (!mentionQuery) {
+      setMentionResults([]);
+      return;
+    }
+    let cancelled = false;
+    const id = setTimeout(() => {
+      searchUsers(mentionQuery)
+        .then((results) => {
+          if (!cancelled) setMentionResults(results);
+        })
+        .catch(() => {
+          if (!cancelled) setMentionResults([]);
+        });
+    }, 200);
+    return () => {
+      cancelled = true;
+      clearTimeout(id);
+    };
+  }, [mentionQuery]);
+
+  const selectMention = (result: UserSearchResult): void => {
+    setDraft((current) => current.replace(/(?:^|\s)@(\w*)$/, (whole) => {
+      const leadingSpace = whole.startsWith(' ') ? ' ' : '';
+      return `${leadingSpace}@${result.display_name} `;
+    }));
+    setMentionResults([]);
+    setMentionQuery(null);
+    inputRef.current?.focus();
+  };
 
   const load = useCallback(async (): Promise<void> => {
     setLoading(true);
@@ -441,6 +495,23 @@ export function CommentSheet({ outfitId, visible, onClose, onCountChange }: Prop
             </View>
           ) : null}
 
+          {mentionResults.length > 0 ? (
+            <View style={styles.mentionDropdown}>
+              {mentionResults.map((result) => (
+                <Pressable
+                  key={result.user_id}
+                  onPress={() => selectMention(result)}
+                  style={styles.mentionRow}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Mention ${result.display_name}`}
+                >
+                  <Avatar name={result.display_name} uri={result.avatar_url} size={26} />
+                  <Text style={styles.mentionName}>{result.display_name}</Text>
+                </Pressable>
+              ))}
+            </View>
+          ) : null}
+
           {emojiPickerOpen ? (
             <ScrollView
               horizontal
@@ -463,22 +534,47 @@ export function CommentSheet({ outfitId, visible, onClose, onCountChange }: Prop
             </ScrollView>
           ) : null}
 
-          <View style={styles.composerRow}>
-            <Avatar name={myName || '?'} uri={myAvatarUrl} size={30} />
-            <TextInput
-              ref={inputRef}
-              style={styles.input}
-              placeholder={replyTarget ? `Reply to ${replyTarget.author_display_name}` : 'Add a comment'}
-              placeholderTextColor={colors.textMuted}
-              value={draft}
-              onChangeText={setDraft}
-              maxLength={500}
-              multiline
-            />
-            {/* @ mention, emoji, and a photo attachment — TikTok's own
-                composer row. @ appends the character rather than opening a
-                real mention search (no backend user-search endpoint exists
-                yet to autocomplete against). */}
+          {/* TikTok's own composer shape: input row on top, the @/emoji/
+              photo icons on their own row directly beneath it — not
+              squeezed into the same row as the avatar/input/Post. */}
+          <View style={styles.composerBlock}>
+            <View style={styles.composerInputRow}>
+              <Avatar name={myName || '?'} uri={myAvatarUrl} size={30} />
+              <TextInput
+                ref={inputRef}
+                style={styles.input}
+                placeholder={replyTarget ? `Reply to ${replyTarget.author_display_name}` : 'Add a comment'}
+                placeholderTextColor={colors.textMuted}
+                value={draft}
+                onChangeText={setDraft}
+                maxLength={500}
+                multiline
+              />
+              <Pressable
+                // onPressIn, not onPress: tapping this button blurs the
+                // TextInput, which dismisses the keyboard as a side effect —
+                // and the moment that starts, the sheet's own position
+                // (pinned relative to keyboard height) shifts down. onPress
+                // only fires on release, by which point this button has
+                // already moved out from under the finger, so the tap
+                // silently misses. onPressIn fires on touch-down, before any
+                // of that reflow can happen.
+                onPressIn={() => void send()}
+                disabled={(!draft.trim() && !pickedImageUri) || sending}
+                accessibilityRole="button"
+                accessibilityLabel="Post comment"
+              >
+                <Text
+                  style={[
+                    styles.send,
+                    ((!draft.trim() && !pickedImageUri) || sending) && styles.sendDisabled,
+                  ]}
+                >
+                  Post
+                </Text>
+              </Pressable>
+            </View>
+
             <View style={styles.composerIcons}>
               <Pressable
                 onPress={insertAtMention}
@@ -513,29 +609,6 @@ export function CommentSheet({ outfitId, visible, onClose, onCountChange }: Prop
                 />
               </Pressable>
             </View>
-            <Pressable
-              // onPressIn, not onPress: tapping this button blurs the
-              // TextInput, which dismisses the keyboard as a side effect —
-              // and the moment that starts, the sheet's own position
-              // (pinned relative to keyboard height) shifts down. onPress
-              // only fires on release, by which point this button has
-              // already moved out from under the finger, so the tap
-              // silently misses. onPressIn fires on touch-down, before any
-              // of that reflow can happen.
-              onPressIn={() => void send()}
-              disabled={(!draft.trim() && !pickedImageUri) || sending}
-              accessibilityRole="button"
-              accessibilityLabel="Post comment"
-            >
-              <Text
-                style={[
-                  styles.send,
-                  ((!draft.trim() && !pickedImageUri) || sending) && styles.sendDisabled,
-                ]}
-              >
-                Post
-              </Text>
-            </Pressable>
           </View>
         </View>
         </View>
@@ -671,10 +744,32 @@ const styles = StyleSheet.create({
   },
   emojiText: { fontSize: 20 },
 
-  composerRow: {
+  // SPEC+ — @ mention autocomplete (docs/spec-deviations.md). A short
+  // dropdown above the composer, same visual weight as the emoji row.
+  mentionDropdown: {
+    marginTop: space.sm,
+    maxHeight: 160,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.md,
+    overflow: 'hidden',
+  },
+  mentionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: space.sm,
+    paddingHorizontal: space.sm,
+    paddingVertical: space.sm,
+    backgroundColor: colors.surface,
+  },
+  mentionName: { ...type.body, color: colors.text },
+
+  // TikTok's own composer shape: the input row, then the @/emoji/photo
+  // icons on their own row directly beneath — not one cramped row.
+  composerBlock: { marginTop: space.sm },
+  composerInputRow: {
     flexDirection: 'row',
     alignItems: 'flex-end',
-    marginTop: space.sm,
     gap: space.sm,
   },
   input: {
@@ -688,13 +783,11 @@ const styles = StyleSheet.create({
     paddingVertical: space.sm,
     maxHeight: 100,
   },
-  // Sits between the input and Post, at the input's own baseline —
-  // TikTok's @ / emoji / photo row lives at the right edge of the pill.
   composerIcons: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: space.sm,
-    paddingBottom: space.sm,
+    gap: space.lg,
+    marginTop: space.sm,
   },
   composerIconGlyph: { ...type.bodyMedium, color: colors.textMuted, fontWeight: weight.medium },
   send: { ...type.bodyMedium, color: colors.accent, fontWeight: weight.medium, paddingVertical: space.sm },

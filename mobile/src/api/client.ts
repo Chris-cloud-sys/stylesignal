@@ -27,6 +27,7 @@ import type {
   RatingResponse,
   TokenPair,
   UserProfile,
+  UserSearchResult,
   WardrobeItem,
   WardrobeListResponse,
 } from './types';
@@ -423,6 +424,11 @@ export function unlikeComment(outfitId: string, commentId: string): Promise<Comm
 export function fetchUserProfile(userId: string, cursor?: string | null): Promise<UserProfile> {
   const query = cursor ? `?limit=20&cursor=${encodeURIComponent(cursor)}` : '?limit=20';
   return request<UserProfile>(`/v1/users/${userId}/profile${query}`);
+}
+
+/** SPEC+ — @ mention autocomplete (docs/spec-deviations.md). */
+export function searchUsers(query: string): Promise<UserSearchResult[]> {
+  return request<UserSearchResult[]>(`/v1/users/search?q=${encodeURIComponent(query)}`);
 }
 
 export function followUser(userId: string): Promise<FollowResponse> {

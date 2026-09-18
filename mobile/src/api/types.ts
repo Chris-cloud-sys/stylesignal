@@ -142,6 +142,13 @@ export interface UserProfile {
   cursor?: string | null;
 }
 
+/** SPEC+ — @ mention autocomplete (docs/spec-deviations.md). */
+export interface UserSearchResult {
+  user_id: string;
+  display_name: string;
+  avatar_url?: string | null;
+}
+
 export interface FollowResponse {
   user_id: string;
   following: boolean;

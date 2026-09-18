@@ -2028,3 +2028,61 @@ still has to live somewhere. Applied to `InsightsScreen`,
 and `WardrobeScreen`'s were left alone — not named in the ask, and
 `ResultScreen`'s already sits at the very top of a hero photo rather
 than a plain header, a different layout problem.
+
+## 47. Shared image was still missing (a load-timing bug this time), real @ mention search, a two-row composer, and ResultScreen's Home button
+
+Five more requests, confirmed understood — and two genuinely corrected —
+before building, per Chris's own ask.
+
+**The shared image was still missing the photo and the logo.** Real
+diagnosis, not a guess: `ResultScreen`'s own Share never has this
+problem because its `ShareCard` is always already mounted — the photo's
+been fully downloaded and on-screen for a while by the time Share is
+tapped. `ShareOutfitAction` mounts `ShareCard` fresh, on demand, right
+when Share is pressed, so the photo starts downloading from zero; the
+100ms capture delay from entry #46 was only ever enough time for
+*local* data (verdict text, palette, meters) to render, never a network
+image. Fixed by `Image.prefetch(thumbUri)` before the card even mounts,
+so the photo's already in cache by the time `ShareCard`'s `<Image>`
+asks for it — a failed prefetch isn't fatal, it just falls through to
+capturing with the placeholder, same as having no photo at all.
+
+**Comment date/Reply visibility** — Chris confirmed leaving this as
+built (entry #46); no change.
+
+**Real @ mention, matching TikTok.** The character-insert version from
+entry #46 was a placeholder, not the real feature — Chris asked for
+actual live search. New backend `GET /v1/users/search?q=` (in
+`users.py`, alongside the profile/follow routes it already owns):
+matches `User.display_name` by substring, case-insensitive. Worth
+noting *why* a plain substring match is already correct: `display_name`
+is never empty in the DB — `register()` always populates it, falling
+back to the email prefix at registration time, not read time — so no
+`COALESCE`-with-email complexity is needed in the query. Mobile: a
+`useEffect` watches the draft for a trailing `@word` token (same
+"doesn't track cursor position, only handles a trailing mention"
+simplification the entry #46 @ button already made — RN's `TextInput`
+doesn't expose selection without extra tracking), debounces a search
+200ms after the query stops changing, and shows results in a dropdown
+above the composer; tapping a result replaces the in-progress `@query`
+with `@DisplayName ` in the draft and refocuses the input — it does not
+auto-post, confirmed with Chris before building it that way.
+
+**Composer icons moved inside the composer.** The @/emoji/photo row
+was squeezed into the same horizontal row as the avatar, input, and
+Post button — cramped, and not what the TikTok reference actually
+shows: input on one row, the icon row directly beneath it, Post
+staying on the input's own row. Restructured to match — `composerRow`
+split into `composerBlock` (wrapper) → `composerInputRow` (avatar +
+input + Post) and `composerIcons` (its own row below).
+
+**ResultScreen's "Home" button, repositioned the same way.** Same
+`FloatingBackButton` from entry #46, with one structural wrinkle the
+other three screens didn't have: `Complete`'s root *was* the
+`ScrollView` itself (no wrapping `View`), and a `position: 'absolute'`
+sibling inside a `ScrollView` positions against the *scrollable
+content* and scrolls away with it — useless for a button that's
+supposed to stay put. Wrapped `Complete`'s return in a new outer
+`<View style={styles.completeFlex}>` so the floating button can be a
+true sibling of the `ScrollView`, fixed on screen regardless of scroll
+position, exactly like the other three.

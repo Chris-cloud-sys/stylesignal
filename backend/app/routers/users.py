@@ -5,7 +5,7 @@ queue: a specific member's public reads, discoverable and revisitable, not
 just whatever the feed's ordering surfaces next.
 """
 import uuid
-from typing import Optional
+from typing import List, Optional
 
 from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy import func, select
@@ -21,7 +21,7 @@ from ..outfit_cards import (
     batch_liked_by_me,
     batch_verdict_phrases,
 )
-from ..schemas import FollowResponse, OutfitListItem, UserProfileOut
+from ..schemas import FollowResponse, OutfitListItem, UserProfileOut, UserSearchResult
 from ..storage import get_storage
 
 router = APIRouter(prefix="/v1/users", tags=["users"])
@@ -29,6 +29,43 @@ router = APIRouter(prefix="/v1/users", tags=["users"])
 
 def _display_name(user: User) -> str:
     return user.display_name.strip() or user.email.split("@")[0]
+
+
+@router.get(
+    "/search",
+    response_model=List[UserSearchResult],
+    summary="@ mention autocomplete — search members by name",
+)
+def search_users(
+    q: str = Query(..., min_length=1, max_length=80),
+    limit: int = Query(default=8, ge=1, le=20),
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> List[UserSearchResult]:
+    """SPEC+ — real @ mention, like TikTok's own live-search-as-you-type
+    picker (docs/spec-deviations.md). `display_name` is never actually
+    empty in the DB — register() always populates it, with the email
+    prefix as its own fallback at registration time (see auth.py) — so a
+    plain substring match against the column is already correct, no
+    COALESCE-with-email needed here."""
+    query = q.strip()
+    if not query:
+        return []
+    storage = get_storage()
+    rows = db.execute(
+        select(User)
+        .where(User.display_name.ilike(f"%{query}%"))
+        .order_by(User.display_name.asc())
+        .limit(limit)
+    ).scalars()
+    return [
+        UserSearchResult(
+            user_id=row.id,
+            display_name=row.display_name,
+            avatar_url=storage.signed_url(row.avatar_key) if row.avatar_key else None,
+        )
+        for row in rows
+    ]
 
 
 def _follower_count(db: Session, user_id: uuid.UUID) -> int:

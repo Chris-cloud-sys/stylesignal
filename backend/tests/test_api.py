@@ -1455,6 +1455,36 @@ def test_own_profile_reports_is_self(auth_client):
     assert profile["is_following"] is False
 
 
+def test_user_search_matches_by_display_name(client):
+    """SPEC+ — @ mention autocomplete (docs/spec-deviations.md)."""
+    tag = uuid.uuid4().hex[:8]
+    target = client.post(
+        "/v1/auth/register",
+        json={
+            "email": "mentionable-{0}@x.com".format(tag),
+            "password": "a-long-password",
+            "display_name": "Zebra{0}".format(tag),
+        },
+    ).json()
+    target_id = client.get(
+        "/v1/auth/me", headers={"Authorization": "Bearer " + target["access_token"]}
+    ).json()["user"]["id"]
+
+    searcher = client.post(
+        "/v1/auth/register",
+        json={"email": "searcher-{0}@x.com".format(tag), "password": "a-long-password"},
+    ).json()
+    client.headers.update({"Authorization": "Bearer " + searcher["access_token"]})
+
+    found = client.get("/v1/users/search?q=Zebra{0}".format(tag)).json()
+    assert len(found) == 1
+    assert found[0]["user_id"] == target_id
+    assert found[0]["display_name"] == "Zebra{0}".format(tag)
+
+    empty = client.get("/v1/users/search?q=NoSuchNameAtAll").json()
+    assert empty == []
+
+
 # --- Personal signal history / style insights (SPEC+) -----------------------
 def _make_pro(client) -> None:
     """The free tier's test quota (3/month) is below MIN_SCANS_FOR_INSIGHTS

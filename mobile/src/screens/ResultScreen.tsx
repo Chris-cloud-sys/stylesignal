@@ -42,6 +42,7 @@ import {
   Swatches,
 } from '../components/primitives';
 import { CommentSheet } from '../components/CommentSheet';
+import { FloatingBackButton } from '../components/FloatingBackButton';
 import { ShareCard, type ShareCardFormat } from '../components/ShareCard';
 import { OCCASIONS, type Occasion } from '../config';
 import { shareFeedbackImage } from '../share';
@@ -240,15 +241,8 @@ function Complete({
   };
 
   return (
+    <View style={styles.completeFlex}>
     <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
-      {/* A second way back besides the bottom "Scan another outfit" CTA —
-          not everyone wants to scroll the whole read to leave. */}
-      <View style={styles.topBar}>
-        <Pressable onPress={onDone} accessibilityRole="button">
-          <Text style={styles.topBarLink}>Home</Text>
-        </Pressable>
-      </View>
-
       <CommentSheet
         outfitId={outfit.outfit_id}
         visible={commentsOpen}
@@ -405,6 +399,12 @@ function Complete({
         </View>
       ) : null}
     </ScrollView>
+      {/* Repositioned from a top-left "Home" text link — same reasoning
+          as entry #46's FloatingBackButton: reachable without a stretch
+          to the top of the screen, additive to the hardware/gesture
+          BackHandler in App.tsx (which iOS doesn't have). */}
+      <FloatingBackButton onPress={onDone} />
+    </View>
   );
 }
 
@@ -722,13 +722,7 @@ function Centered({
 
 const styles = StyleSheet.create({
   container: { padding: space.lg, paddingBottom: space.xxl },
-  topBar: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'baseline',
-    marginBottom: space.sm,
-  },
-  topBarLink: { ...type.meta, color: colors.textMuted },
+  completeFlex: { flex: 1, backgroundColor: colors.background },
   stage: { ...type.meta, color: colors.textMuted, marginBottom: space.md },
   wardrobeButton: { marginBottom: space.lg },
   // §7.8 the hero is a container for the photo AND the scrim-mounted

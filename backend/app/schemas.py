@@ -255,6 +255,14 @@ class UserProfileOut(BaseModel):
     cursor: Optional[str] = None
 
 
+class UserSearchResult(BaseModel):
+    """SPEC+ — @ mention autocomplete (docs/spec-deviations.md)."""
+
+    user_id: uuid.UUID
+    display_name: str
+    avatar_url: Optional[str] = None
+
+
 class FollowResponse(BaseModel):
     user_id: uuid.UUID
     following: bool

@@ -63,18 +63,32 @@ export function ShareOutfitAction({
       // palette, meters) to render, not a network image. Prefetching
       // before the card even mounts means it's already in the image
       // cache by the time ShareCard's <Image> asks for it.
+      // TEMPORARY instrumentation (docs/spec-deviations.md) — grep logcat
+      // for "[ShareDebug]" during a live repro of the missing-photo bug,
+      // then remove once the real cause is confirmed. Two prior fixes here
+      // (onLayout capture, then this prefetch) were each reasoned from a
+      // screenshot, not measured — this logs what actually happens.
+      console.log('[ShareDebug] ShareOutfitAction thumbUri', thumbUri);
       if (thumbUri) {
+        const prefetchStart = Date.now();
         try {
-          await Image.prefetch(thumbUri);
-        } catch {
+          const prefetched = await Image.prefetch(thumbUri);
+          console.log('[ShareDebug] Image.prefetch resolved', {
+            prefetched,
+            ms: Date.now() - prefetchStart,
+          });
+        } catch (err) {
           // Prefetch failing isn't fatal — ShareCard just captures with
           // its placeholder in that case, same as no photo at all.
+          console.log('[ShareDebug] Image.prefetch threw', { ms: Date.now() - prefetchStart, err });
         }
       }
       // Mounting the off-screen ShareCard is what triggers the capture,
       // in the effect below, once it's actually had a render pass.
+      console.log('[ShareDebug] mounting ShareCard now');
       setFeedback(detail.feedback);
-    } catch {
+    } catch (err) {
+      console.log('[ShareDebug] fetchOutfit/share() threw', err);
       setBusy(false);
     }
   };
@@ -91,7 +105,12 @@ export function ShareOutfitAction({
   // ResultScreen's own (working) share already uses.
   useEffect(() => {
     if (!feedback) return;
+    const mountedAt = Date.now();
     const id = setTimeout(() => {
+      console.log('[ShareDebug] capture timer fired', {
+        msSinceMount: Date.now() - mountedAt,
+        hasCardRef: !!cardRef.current,
+      });
       void shareFeedbackImage(cardRef, feedback).finally(() => {
         setBusy(false);
         setFeedback(null);

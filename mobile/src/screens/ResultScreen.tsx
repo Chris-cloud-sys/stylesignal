@@ -60,6 +60,9 @@ interface Props {
   /** Result-screen "change occasion & re-read" — hands the new outfit's id
    * back up so the caller can navigate to its own result screen. */
   onReread: (outfitId: string) => void;
+  /** SPEC+ — tappable @mentions in the comment sheet (docs/spec-
+   * deviations.md). Mirrors FeedScreen/BrowseFeed's own onOpenProfile. */
+  onOpenProfile: (userId: string) => void;
 }
 
 /** §5.3 failure reasons, said plainly. Never blame the user. */
@@ -82,7 +85,7 @@ const FAILURE_COPY: Record<FailureReason, { title: string; body: string }> = {
   },
 };
 
-export function ResultScreen({ outfitId, onDone, onReread }: Props): React.ReactElement {
+export function ResultScreen({ outfitId, onDone, onReread, onOpenProfile }: Props): React.ReactElement {
   const { state, retry } = useOutfitPolling(outfitId);
 
   if (state.phase === 'error') {
@@ -116,7 +119,7 @@ export function ResultScreen({ outfitId, onDone, onReread }: Props): React.React
     );
   }
 
-  return <Complete outfit={outfit} onDone={onDone} onReread={onReread} />;
+  return <Complete outfit={outfit} onDone={onDone} onReread={onReread} onOpenProfile={onOpenProfile} />;
 }
 
 // --- Pending (§4.1 skeleton) ----------------------------------------------
@@ -166,10 +169,12 @@ function Complete({
   outfit,
   onDone,
   onReread,
+  onOpenProfile,
 }: {
   outfit: OutfitDetail;
   onDone: () => void;
   onReread: (outfitId: string) => void;
+  onOpenProfile: (userId: string) => void;
 }): React.ReactElement {
   const feedback = outfit.feedback;
   const thumb = absoluteMediaUrl(outfit.thumb_url);
@@ -248,6 +253,7 @@ function Complete({
         visible={commentsOpen}
         onClose={() => setCommentsOpen(false)}
         onCountChange={(delta) => setCommentCount((count) => Math.max(0, count + delta))}
+        onOpenProfile={onOpenProfile}
       />
 
       {thumb ? (

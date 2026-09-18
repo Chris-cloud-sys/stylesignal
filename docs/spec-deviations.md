@@ -2086,3 +2086,62 @@ supposed to stay put. Wrapped `Complete`'s return in a new outer
 `<View style={styles.completeFlex}>` so the floating button can be a
 true sibling of the `ScrollView`, fixed on screen regardless of scroll
 position, exactly like the other three.
+
+## 48. Newest-first comments, tappable @mentions, and real instrumentation on the still-missing share photo
+
+Four more items from one screenshot, confirmed understood before
+building, per Chris's own ask.
+
+**Newest comments first.** `list_comments` in `feed.py` ordered by
+`Comment.created_at.asc(), Comment.id.asc()`; flipped both to `.desc()`
+so a freshly posted top-level comment appears at the top, matching
+every mainstream app's own comment ordering. `list_replies` is left
+oldest-first on purpose — a reply thread reads top-to-bottom as a
+conversation, and nothing asked for that to change. Mobile side:
+`CommentSheet`'s `send()` now prepends a newly posted top-level comment
+(`[comment, ...existing]`) instead of appending, so the client doesn't
+have to refetch to see its own comment land in the right spot. Added
+`test_top_level_comments_are_newest_first` to lock the ordering in.
+
+**Tappable @mentions.** A posted comment's `@Name` was plain text —
+Chris asked for it to become a real link to that member's profile.
+Reuses the `GET /v1/users/search?q=` endpoint entry #47 added for the
+composer's own autocomplete: `CommentSheet` now splits a comment's body
+on `@word` tokens (`splitMentions`), rendering each as a `colors.accent`
+nested `<Text onPress=…>` — RN's supported way to make an inline span
+inside a paragraph tappable, unlike wrapping in `Pressable`, which
+doesn't lay out inline. On tap, `handleMentionPress` calls
+`searchUsers(name)` and resolves to the best match (exact
+case-insensitive first, then a startsWith match, then whatever comes
+back) before calling the new `onOpenProfile` prop. One accepted
+simplification, consistent with one already in this codebase: the
+regex only picks up a single word after `@` (`/@(\w+)/g`), the same
+boundary the composer's own live-search `useEffect` already stops at —
+a multi-word display name like "Jane Doe" only highlights "@Jane", but
+tapping it still resolves correctly since the search is substring-
+based, not exact. `onOpenProfile` was already in scope for
+`FeedScreen`/`BrowseFeed` (their own avatar taps use it); `ResultScreen`
+never had it, so it's a new prop on `ResultScreen`'s own `Props`,
+threaded down into `Complete`, wired in `App.tsx` as
+`onOpenProfile={(userId) => setScreen({ name: 'userProfile', userId,
+from: 'capture' })}` — `'capture'` because that's the tab `ResultScreen`
+is reached from, mirroring the pattern `userProfile`'s own back
+navigation already relies on (`setScreen({ name: screen.from })`).
+
+**The shared image is STILL missing the photo — instrumented, not
+guessed a fourth time.** Two prior fixes here (entry #46's `onLayout`
+rework, entry #47's `Image.prefetch`) each addressed a real cause, and
+Chris still hit the same symptom on the next build. Every failure path
+in `shareFeedbackImage` (`share.ts`) silently fell back to a text-only
+share — which is exactly why this kept getting reasoned about instead
+of diagnosed: there was no visibility into which step actually failed,
+or whether anything failed at all (a capture that *succeeds* but paints
+a blank photo looks identical from the outside to one that never ran).
+Added `[ShareDebug]`-prefixed `console.log` instrumentation instead of
+a fourth guess: `Sharing.isAvailableAsync()`'s result, `captureRef`'s
+output file (`exists`/`size`), the copy into the cache dir, and
+`Sharing.shareAsync`'s resolution in `share.ts`; `Image.prefetch`'s
+resolution and elapsed time, and the capture timer's elapsed time since
+mount, in `ShareOutfitAction.tsx`. This logging is temporary — meant to
+be read from a live `adb logcat` repro with Chris, then removed once
+the real cause is confirmed, not shipped long-term.

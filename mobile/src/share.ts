@@ -44,9 +44,22 @@ export async function shareFeedbackImage(
   cardRef: RefObject<View | null>,
   feedback: Feedback,
 ): Promise<void> {
+  // SPEC+ (docs/spec-deviations.md) — two prior fixes here (onLayout-based
+  // capture, then Image.prefetch) each addressed a real cause but the photo
+  // is STILL reported missing from the shared image. Every failure path in
+  // this function previously swallowed its error and fell back silently to
+  // a text-only share, which is exactly why this has been guessed at twice
+  // instead of diagnosed: there was never any visibility into which step
+  // actually failed, or whether "failed" even happened (a capture that
+  // *succeeds* but paints a blank photo looks identical from the outside).
+  // TEMPORARY instrumentation — grep logcat for "[ShareDebug]" during a
+  // live repro, then remove once the real cause is confirmed.
+  console.log('[ShareDebug] shareFeedbackImage start', { hasCardRef: !!cardRef.current });
   try {
     const canShareFile = await Sharing.isAvailableAsync();
+    console.log('[ShareDebug] Sharing.isAvailableAsync', canShareFile);
     if (!canShareFile || !cardRef.current) {
+      console.log('[ShareDebug] falling back to text: no share sheet or no card ref');
       shareFeedbackText(feedback);
       return;
     }
@@ -57,15 +70,24 @@ export async function shareFeedbackImage(
     // Copying into expo-file-system's cache dir first keeps the file
     // somewhere Sharing.shareAsync is actually configured to hand off.
     const capturedUri = await captureRef(cardRef, { format: 'png', quality: 1 });
+    const capturedFile = new File(capturedUri);
+    console.log('[ShareDebug] captureRef done', {
+      capturedUri,
+      exists: capturedFile.exists,
+      size: capturedFile.exists ? capturedFile.size : null,
+    });
     const shareableFile = new File(Paths.cache, `stylesignal-share-${Date.now()}.png`);
-    new File(capturedUri).copy(shareableFile);
+    capturedFile.copy(shareableFile);
+    console.log('[ShareDebug] copied to cache', { uri: shareableFile.uri, size: shareableFile.size });
     await Sharing.shareAsync(shareableFile.uri, {
       mimeType: 'image/png',
       dialogTitle: 'Share this read',
     });
-  } catch {
+    console.log('[ShareDebug] Sharing.shareAsync resolved');
+  } catch (err) {
     // Capture or the share sheet failed (or the user cancelled) — text still
     // gets the read across.
+    console.log('[ShareDebug] caught error, falling back to text', err);
     shareFeedbackText(feedback);
   }
 }

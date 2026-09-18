@@ -283,6 +283,7 @@ function BrowseCard({
         visible={commentsOpen}
         onClose={() => setCommentsOpen(false)}
         onCountChange={(delta) => setCommentCount((count) => Math.max(0, count + delta))}
+        onOpenProfile={onOpenProfile}
       />
     </View>
   );

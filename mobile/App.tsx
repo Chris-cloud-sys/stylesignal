@@ -217,6 +217,7 @@ export default function App(): React.ReactElement {
                 setScreen({ name: 'result', outfitId: newOutfitId });
                 void refreshQuota();
               }}
+              onOpenProfile={(userId) => setScreen({ name: 'userProfile', userId, from: 'capture' })}
             />
           ) : null}
 

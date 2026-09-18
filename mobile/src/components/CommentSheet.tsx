@@ -115,9 +115,37 @@ interface Props {
   onClose: () => void;
   /** Lets the feed card keep its own comment_count in sync without a refetch. */
   onCountChange: (delta: number) => void;
+  /** SPEC+ — tappable @mentions (docs/spec-deviations.md). Opens the
+   * mentioned member's public profile; mirrors the onOpenProfile already
+   * wired for avatar taps on Feed/Browse cards. */
+  onOpenProfile: (userId: string) => void;
 }
 
-export function CommentSheet({ outfitId, visible, onClose, onCountChange }: Props): React.ReactElement {
+/** Splits a comment body on `@word` tokens for rendering as tappable spans.
+ * Only a single trailing word, no spaces — the same simplification the
+ * composer's own live mention-search already makes (its regex stops at the
+ * first space too), so a multi-word display name like "Jane Doe" highlights
+ * only "@Jane"; tapping it still resolves correctly since the search below
+ * is a substring match, not an exact one. */
+function splitMentions(body: string): Array<{ type: 'text' | 'mention'; text: string }> {
+  const parts: Array<{ type: 'text' | 'mention'; text: string }> = [];
+  const regex = /@(\w+)/g;
+  let lastIndex = 0;
+  let match: RegExpExecArray | null;
+  while ((match = regex.exec(body))) {
+    if (match.index > lastIndex) {
+      parts.push({ type: 'text', text: body.slice(lastIndex, match.index) });
+    }
+    parts.push({ type: 'mention', text: match[1]! });
+    lastIndex = match.index + match[0].length;
+  }
+  if (lastIndex < body.length) {
+    parts.push({ type: 'text', text: body.slice(lastIndex) });
+  }
+  return parts;
+}
+
+export function CommentSheet({ outfitId, visible, onClose, onCountChange, onOpenProfile }: Props): React.ReactElement {
   const keyboardHeight = useKeyboardHeight();
   // SPEC+ (docs/spec-deviations.md #39, round 5) — the real cause of "Post
   // silently dismisses the keyboard instead of posting": confirmed via a
@@ -193,6 +221,22 @@ export function CommentSheet({ outfitId, visible, onClose, onCountChange }: Prop
     setMentionQuery(null);
     inputRef.current?.focus();
   };
+
+  // A posted comment's body only has the plain "@Name" text, not a stored
+  // user id — resolves it against the same search endpoint the composer's
+  // own autocomplete uses, at tap time.
+  const handleMentionPress = useCallback((name: string): void => {
+    searchUsers(name)
+      .then((results) => {
+        const lower = name.toLowerCase();
+        const match =
+          results.find((r) => r.display_name.toLowerCase() === lower) ??
+          results.find((r) => r.display_name.toLowerCase().startsWith(lower)) ??
+          results[0];
+        if (match) onOpenProfile(match.user_id);
+      })
+      .catch(() => undefined);
+  }, [onOpenProfile]);
 
   const load = useCallback(async (): Promise<void> => {
     setLoading(true);
@@ -294,7 +338,9 @@ export function CommentSheet({ outfitId, visible, onClose, onCountChange }: Prop
           ),
         );
       } else {
-        setItems((existing) => [...existing, comment]);
+        // Newest first, matching the backend's own order (list_comments)
+        // and TikTok's — prepend, don't append.
+        setItems((existing) => [comment, ...existing]);
       }
       setTotalCount((count) => count + 1);
       onCountChange(1);
@@ -346,7 +392,25 @@ export function CommentSheet({ outfitId, visible, onClose, onCountChange }: Prop
       />
       <View style={styles.rowBody}>
         <Text style={styles.author}>{comment.author_display_name}</Text>
-        {comment.body ? <Text style={styles.body}>{comment.body}</Text> : null}
+        {comment.body ? (
+          <Text style={styles.body}>
+            {splitMentions(comment.body).map((part, index) =>
+              part.type === 'mention' ? (
+                <Text
+                  key={index}
+                  style={styles.mention}
+                  onPress={() => handleMentionPress(part.text)}
+                  accessibilityRole="link"
+                  accessibilityLabel={`Open ${part.text}'s profile`}
+                >
+                  {`@${part.text}`}
+                </Text>
+              ) : (
+                <Text key={index}>{part.text}</Text>
+              ),
+            )}
+          </Text>
+        ) : null}
         {comment.image_url ? (
           <Image
             source={{ uri: absoluteMediaUrl(comment.image_url) }}
@@ -686,6 +750,7 @@ const styles = StyleSheet.create({
   // the thing actually meant to be read.
   author: { ...type.meta, color: colors.textMuted, fontWeight: weight.medium },
   body: { ...type.body, color: colors.text, marginTop: 2 },
+  mention: { color: colors.accent, fontWeight: weight.medium },
   commentImage: {
     width: 160,
     height: 160,
@@ -783,9 +848,13 @@ const styles = StyleSheet.create({
     paddingVertical: space.sm,
     maxHeight: 100,
   },
+  // Centered rather than left-aligned — asked for explicitly once it was
+  // clear these can't sit genuinely inside the input pill itself without
+  // overlapping typed text.
   composerIcons: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'center',
     gap: space.lg,
     marginTop: space.sm,
   },

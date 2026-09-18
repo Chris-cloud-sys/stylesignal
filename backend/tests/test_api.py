@@ -1199,6 +1199,23 @@ def test_no_delete_endpoint_for_comments(auth_client):
     assert response.status_code == 404
 
 
+def test_top_level_comments_are_newest_first(auth_client):
+    """SPEC+ — matches TikTok's own comment order (docs/spec-deviations.md).
+    Replies stay oldest-first (list_replies is untouched) — only the
+    top-level list itself flips."""
+    outfit_id = upload(auth_client, is_public="true")["outfit_id"]
+    wait_for_terminal(auth_client, outfit_id)
+    first = auth_client.post(
+        "/v1/outfits/{0}/comments".format(outfit_id), data={"body": "first"}
+    ).json()["comment_id"]
+    second = auth_client.post(
+        "/v1/outfits/{0}/comments".format(outfit_id), data={"body": "second"}
+    ).json()["comment_id"]
+
+    items = auth_client.get("/v1/outfits/{0}/comments".format(outfit_id)).json()["items"]
+    assert [item["comment_id"] for item in items] == [second, first]
+
+
 def test_can_reply_to_a_top_level_comment(client):
     author = client.post(
         "/v1/auth/register",

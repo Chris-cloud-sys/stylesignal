@@ -430,7 +430,11 @@ def list_comments(
         )
         .join(User, User.id == Comment.author_id)
         .where(Comment.outfit_id == outfit_id, Comment.parent_id.is_(None))
-        .order_by(Comment.created_at.asc(), Comment.id.asc())
+        # SPEC+ — newest first (docs/spec-deviations.md), matching TikTok's
+        # own top-level comment order. Replies (list_replies below) stay
+        # oldest-first — a reply thread reads in the order it happened,
+        # only the top-level list itself is newest-first.
+        .order_by(Comment.created_at.desc(), Comment.id.desc())
         .offset(_decode_offset(cursor))
         .limit(limit)
     )

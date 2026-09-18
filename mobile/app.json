@@ -6,6 +6,7 @@
     "orientation": "portrait",
     "userInterfaceStyle": "automatic",
     "scheme": "stylesignal",
+    "icon": "./assets/icon.png",
     "splash": {
       "resizeMode": "contain",
       "backgroundColor": "#FAFAFA"
@@ -21,7 +22,8 @@
     "android": {
       "package": "com.latencyx.stylesignal",
       "adaptiveIcon": {
-        "backgroundColor": "#FAFAFA"
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#0D0F14"
       }
     },
     "plugins": [

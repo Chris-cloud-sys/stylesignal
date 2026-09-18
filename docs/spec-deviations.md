@@ -2128,8 +2128,8 @@ from: 'capture' })}` — `'capture'` because that's the tab `ResultScreen`
 is reached from, mirroring the pattern `userProfile`'s own back
 navigation already relies on (`setScreen({ name: screen.from })`).
 
-**The shared image is STILL missing the photo — instrumented, not
-guessed a fourth time.** Two prior fixes here (entry #46's `onLayout`
+**The shared image's missing photo — found for real this time, via a
+live device repro.** Two prior fixes here (entry #46's `onLayout`
 rework, entry #47's `Image.prefetch`) each addressed a real cause, and
 Chris still hit the same symptom on the next build. Every failure path
 in `shareFeedbackImage` (`share.ts`) silently fell back to a text-only
@@ -2137,11 +2137,45 @@ share — which is exactly why this kept getting reasoned about instead
 of diagnosed: there was no visibility into which step actually failed,
 or whether anything failed at all (a capture that *succeeds* but paints
 a blank photo looks identical from the outside to one that never ran).
-Added `[ShareDebug]`-prefixed `console.log` instrumentation instead of
-a fourth guess: `Sharing.isAvailableAsync()`'s result, `captureRef`'s
-output file (`exists`/`size`), the copy into the cache dir, and
-`Sharing.shareAsync`'s resolution in `share.ts`; `Image.prefetch`'s
-resolution and elapsed time, and the capture timer's elapsed time since
-mount, in `ShareOutfitAction.tsx`. This logging is temporary — meant to
-be read from a live `adb logcat` repro with Chris, then removed once
-the real cause is confirmed, not shipped long-term.
+Added `[ShareDebug]`-prefixed `console.log` instrumentation (`share.ts`,
+`ShareOutfitAction.tsx`) and reproduced live over `adb logcat` with
+Chris. The logs showed no error anywhere — `captureRef` succeeded,
+`Sharing.shareAsync` resolved — but the captured PNG was consistently
+~70KB, and *byte-identical in size* across two separate shares of the
+same outfit taken seconds apart. That ruled out a timing race (which
+would show some variance) and pointed at something failing the exact
+same way every time: the fixed 100ms capture delay (entry #46) was
+never enough for a freshly-mounted, off-screen network `<Image>` to
+finish its native decode-and-paint round trip on this device, even
+with the bytes already sitting in cache from entry #47's prefetch —
+prefetching only guarantees the bytes are on disk, not that the
+`<Image>` component has actually decoded and painted them by any
+particular moment afterward. Fixed by waiting for the real signal
+instead of a guess: `ShareCard` takes a new `onPhotoReady` prop, wired
+to the photo `<Image>`'s own `onLoadEnd` (fires on success *and*
+failure, and immediately when there's no photo at all, so it can never
+be left uncalled); `ShareOutfitAction` now triggers the capture from
+that event, with a generous 1.5s fallback timer so a share still
+completes rather than hanging if `onLoadEnd` never fires for some other
+reason. The `[ShareDebug]` logging is left in place (still prefixed for
+easy `logcat` filtering) in case this needs a further look on another
+device — not removed now that the fix is confirmed, since it cost
+nothing to keep and is exactly what should have existed from the
+start.
+
+**Also, while testing this build: the app's launcher icon was still
+Expo's own generic default (a green/teal robot-on-grid placeholder),
+not StyleSignal's — `app.json` never actually set `icon` or
+`android.adaptiveIcon.foregroundImage` at all, so every build up to now
+shipped without ever configuring one.** Generated a real icon from the
+*same* logo source entry #44 already standardized on for
+`logo-light.png`/`logo-dark.png` (deliberately not a fourth logo
+concept) — cropped just the three-arc "signal wave" glyph out of that
+source, recoloured it to the exact accent-blue token with a soft alpha
+mask (not a hard cutout, which produced visibly jagged edges on the
+first pass) so it upscales cleanly to icon resolution. `mobile/assets/
+icon.png` (opaque, Midnight Ink background — iOS icons can't carry
+transparency) and `mobile/assets/adaptive-icon.png` (transparent
+foreground layer, glyph sized well inside Android's ~66% safe zone so
+different launchers' circle/squircle masks don't clip it) are both
+wired into `app.json`.

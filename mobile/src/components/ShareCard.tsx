@@ -49,12 +49,28 @@ interface Props {
   occasion?: string | null;
   feedback: Feedback;
   format?: ShareCardFormat;
+  /** SPEC+ (docs/spec-deviations.md #48) — fires once the photo has
+   * actually decoded and painted, or immediately when there's no photo to
+   * wait for. `Image`'s `onLoadEnd` fires on both success and failure, so
+   * this is never left uncalled. Lets an on-demand capture (see
+   * ShareOutfitAction) wait for the real signal instead of a guessed
+   * delay — confirmed via device logging that a fixed short timeout was
+   * *always*, not just occasionally, too short for a freshly-mounted,
+   * off-screen network `<Image>` to finish its native decode/paint round
+   * trip, even with the bytes already prefetched into cache. */
+  onPhotoReady?: () => void;
 }
 
 export const ShareCard = React.forwardRef<View, Props>(function ShareCard(
-  { photoUri, occasion, feedback, format = 'story' },
+  { photoUri, occasion, feedback, format = 'story', onPhotoReady },
   ref,
 ): React.ReactElement {
+  // No photo to wait for — signal ready right away so a caller waiting on
+  // onPhotoReady doesn't hang forever for a photo that's never coming.
+  React.useEffect(() => {
+    if (!photoUri) onPhotoReady?.();
+  }, [photoUri, onPhotoReady]);
+
   const meters: Array<['occasion_match' | 'signal_clarity', 'strong' | 'partial' | 'off']> = [];
   if (feedback.occasion_match) meters.push(['occasion_match', feedback.occasion_match.level]);
   if (feedback.signal_clarity) meters.push(['signal_clarity', feedback.signal_clarity.level]);
@@ -68,7 +84,12 @@ export const ShareCard = React.forwardRef<View, Props>(function ShareCard(
       style={[styles.card, { height: FORMAT_HEIGHT[format] }]}
     >
       {photoUri ? (
-        <Image source={{ uri: photoUri }} style={styles.photo} resizeMode="cover" />
+        <Image
+          source={{ uri: photoUri }}
+          style={styles.photo}
+          resizeMode="cover"
+          onLoadEnd={onPhotoReady}
+        />
       ) : (
         <View style={[styles.photo, styles.photoPlaceholder]} />
       )}

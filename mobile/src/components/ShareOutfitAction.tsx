@@ -12,7 +12,7 @@
  * wasted work for the overwhelming majority never tapped.
  */
 import { Ionicons } from '@expo/vector-icons';
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Image, Pressable, StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
 
 import { fetchOutfit } from '../api/client';
@@ -99,25 +99,43 @@ export function ShareOutfitAction({
   // container pushed the card to -9999/-9999, unlike ResultScreen's proven
   // top:0/left:-2000 — plausibly too far off-screen for Android to bother
   // laying out at all), leaving `busy` stuck true forever: the reported
-  // "spins and nothing happens" bug. Switched to the same "wait a tick,
-  // then act" shape BrowseFeed's onScrollToIndexFailed retry already uses
-  // elsewhere in this codebase, and the same offscreen position
-  // ResultScreen's own (working) share already uses.
-  useEffect(() => {
-    if (!feedback) return;
-    const mountedAt = Date.now();
-    const id = setTimeout(() => {
-      console.log('[ShareDebug] capture timer fired', {
-        msSinceMount: Date.now() - mountedAt,
-        hasCardRef: !!cardRef.current,
-      });
+  // "spins and nothing happens" bug. Switched to a fixed 100ms setTimeout
+  // instead — but real device logging (docs/spec-deviations.md #48)
+  // confirmed that was *always*, not occasionally, too short for a fresh
+  // off-screen `<Image>` to finish decoding and painting, even with the
+  // bytes already prefetched: captured file size was byte-identical across
+  // repeat shares of the same outfit, ruling out a timing race and pointing
+  // at a deterministic shortfall instead. Now waits for the photo's own
+  // `onPhotoReady` (ShareCard.tsx's onLoadEnd) — the real signal, not a
+  // guess — with a generous fallback timer so a share still completes
+  // (with whatever's painted so far) rather than hanging if that event
+  // never fires for some reason.
+  const capturedRef = useRef(false);
+  const triggerCapture = useCallback(
+    (source: string): void => {
+      if (capturedRef.current || !feedback) return;
+      capturedRef.current = true;
+      console.log('[ShareDebug] triggering capture', { source, hasCardRef: !!cardRef.current });
       void shareFeedbackImage(cardRef, feedback).finally(() => {
         setBusy(false);
         setFeedback(null);
       });
-    }, 100);
-    return () => clearTimeout(id);
-  }, [feedback]);
+    },
+    [feedback],
+  );
+
+  useEffect(() => {
+    if (!feedback) return;
+    capturedRef.current = false;
+    const mountedAt = Date.now();
+    const fallback = setTimeout(() => {
+      console.log('[ShareDebug] capture fallback timer fired (onPhotoReady never came)', {
+        msSinceMount: Date.now() - mountedAt,
+      });
+      triggerCapture('fallback-timeout');
+    }, 1500);
+    return () => clearTimeout(fallback);
+  }, [feedback, triggerCapture]);
 
   return (
     <>
@@ -142,6 +160,7 @@ export function ShareOutfitAction({
             occasion={occasion}
             feedback={feedback}
             format="story"
+            onPhotoReady={() => triggerCapture('onPhotoReady')}
           />
         </View>
       ) : null}
